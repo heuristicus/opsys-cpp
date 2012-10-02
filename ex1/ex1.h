@@ -11,9 +11,14 @@ int strcomp(char*, char*);
 struct strlist{
     char *s;
     struct strlist *next;
+    struct strlist *prev;
 };
 typedef struct strlist strlist;
 
-strlist make_list(char* s);
-int length(strlist* head);
-int insert(strlist* head, char* s);
+strlist* init_list(char*);
+int length(strlist*);
+int insert_ordered(strlist*, char*);
+void insert(strlist*, char*);
+void print_list(strlist*);
+
+
