@@ -1,22 +1,28 @@
 #include "ex1.h"
 
-typedef struct 
+
+int main(int argc, char *argv[])
 {
-    char *s;
-    struct strlist *next;
     
-} strlist;
-
-strlist make_list(char* s);
-int length(struct strlist* head);
-
+    return 0;
+}
 
 /* initialises the list and returns a pointer to the start of the list */
-struct strlist* init_list(char* str)
+strlist* init_list(char* str)
 {
-    strlist head = malloc(sizeof(struct strlist));
-    head->s = str;
-    head->next
+    strlist *head = malloc(sizeof(strlist));
+    head->s = *str;
+    head->next = NULL;
+    
+    return head;
+}
 
-    return head
+int insert(strlist *head, char *str)
+{
+    return 0;
+}
+
+int length(strlist* head)
+{
+    return 0;
 }
