@@ -4,8 +4,7 @@
 
 //strfunc.c
 int strcomp(char*, char*);
-
-//lsdir.c
+int len(char*);
 
 //strlist.c
 struct strlist{

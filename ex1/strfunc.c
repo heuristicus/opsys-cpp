@@ -1,10 +1,18 @@
 #include "ex1.h"
 
+/* int main(int argc, char *argv[]) */
+/* { */
+/*     printf("%d\n", len("sup")); */
+/*     return 0; */
+/* } */
+
 /* Returns the result of an alphanumeric comparison of string s1 and s2. 
    If s1 is of greater value than the second, the function returns 1.
    If they are equal, 0 is returned. If the second is greater, -1 is returned.
    a has the highest value, z has the lowest. 
-   Characters are converted to lowercase before being compared.*/
+   Characters are converted to lowercase before being compared.
+   Shorter strings are considered higher value
+*/
 int strcomp(char* s1, char* s2)
 {
     for(; *s1 != '\0' && *s2 != '\0'; ++s1, ++s2){
@@ -14,6 +22,25 @@ int strcomp(char* s1, char* s2)
 	    return 1;
     }
 
-    return 0;
+    /* If we get to here, the strings are the same up to the length
+       of the shorter string. The shorter string is higher value, so
+       return a value accordingly.
+    */
+    if (len(s1) < len(s2))
+	return 1;
+    else if (len(s1) > len(s2))
+	return -1;
+    else
+	return 0;
+    
+}
+
+int len(char* s)
+{
+    int i;
+    
+    for (i = 0; *s != '\0'; ++i, ++s);
+    
+    return i;
     
 }
