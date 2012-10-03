@@ -4,7 +4,6 @@
 
 //strfunc.c
 int strcomp(char*, char*);
-int len(char*);
 
 //strlist.c
 struct strlist{
