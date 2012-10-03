@@ -4,7 +4,7 @@
 int main(int argc, char *argv[])
 {
     if (argc != 2){
-	printf("usage: lsdir [directory]\n");
+	perror("usage: lsdir [directory]\n");
 	exit(1);
     }
     
@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
     struct dirent *entry;
     
     if ((dir_ptr = opendir(argv[1])) == NULL){
-	printf("Directory invalid.\n");
+	perror("Directory invalid.\n");
 	exit(1);
     }
 

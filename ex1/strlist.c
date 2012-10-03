@@ -5,13 +5,21 @@ int main(int argc, char *argv[])
 {
     strlist *list = init_list("sup");
     
-    int i;
+    insert_ordered(list, "ab");
+    insert_ordered(list, "ac");
+    insert_ordered(list, "ad");
+    insert_ordered(list, "ae");
+    insert_ordered(list, "af");
+    insert_ordered(list, "ag");
+    insert_ordered(list, ".");
+    insert_ordered(list, "..");
+    insert_ordered(list, "01234");
+    insert_ordered(list, "012a4");
     
-    for (i = 0; i < 9; ++i){
-	list = insert(list, "yw");
-    }
     
     print_list(list);
+    printf("%d\n", length(list));
+    free_list(list);
     
     return 0;
 }
@@ -20,51 +28,93 @@ int main(int argc, char *argv[])
 strlist* init_list(char *str)
 {
     strlist *head = malloc(sizeof(strlist));
+
     head->s = str;
     head->next = NULL;
-    head->prev = NULL;
         
     return head;
 }
 
-strlist* insert(strlist *head, char *str)
+/* Inserts a string into the list. */
+strlist* add(strlist *head, char *str)
 {
-    printf("head str %s, head next %p\n", head->s, head->next);
     strlist *new = malloc(sizeof(strlist));
     new->s = str;
-    printf("new string val %s\n", new->s);
-    new->prev = head;
-    printf("new prev val %p\n", new->prev);
-    head->next = new;
-    printf("new next val %p\n", new->next);
-    
-    return (head = new);
+    new->next = head;
+
+    return new;
 }
 
-int insert_ordered(strlist *head, char *str)
+/* Inserts a string into the list in an ordered fashion. The head
+   of the list is the string with the highest alphanumeric value.
+*/
+strlist* insert_ordered(strlist *head, char *str)
 {
-    strlist *cur = head;
-    
-    while (strcomp(str, cur->s) != 1){
-	cur = head->next;
+
+    strlist *new = malloc(sizeof(strlist));
+
+    /* If the string you want to insert is greater than the one
+       currently in head, make a new strlist to replace head.
+    */
+    if (strcomp(str, head->s) == 1){
+	new->s = str;
+	new->next = head;
+	return new;
     }
     
+    strlist *prev;
+    strlist *cur = head;
     
-    return 0;
+    /* If the string being inserted is less than the value in head,
+       go down the list until you find a lower-value string, then 
+       insert in that location, and return the unchanged head 
+       of the list. If the values are equal, the string being
+       inserted will go before the one previously inserted.
+    */
+    while (strcomp(str, cur->s) != 1){
+	prev = cur;
+	cur = cur->next;
+    }
 
+    new->s = str;
+    new->next = cur;
+    
+    return head;
 }
 
+/* Print the given list to stdout. */
 void print_list(strlist *head)
 {
     strlist *node = head;
     
     while (node != NULL){
 	printf("%s\n", node->s);
-	node = node->prev;
+	node = node->next;
     }
 }
 
+/* Goes through the list, freeing all allocated memory. */
+void free_list(strlist *head)
+{
+    strlist *cur = head;
+    strlist *prev;
+    
+    while (cur != NULL){
+	prev = cur;
+	cur = cur->next;
+	free(prev);
+    }
+}
+
+/* Returns the length of the list.  */
 int length(strlist* head)
 {
-    return 0;
+    int len;
+    strlist *cur;
+    
+    for (len = 0, cur = head; cur != NULL; ++len){
+	cur = cur->next;
+    }
+    
+    return len;
 }
