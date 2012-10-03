@@ -49,10 +49,10 @@ strlist* insert_ordered(strlist *head, char *str)
     /* If head is not yet initialised, put the string in and
        return head.
     */
-    if (head == NULL){
+    if (head == NULL)
 	return init_list(str);
-    }
 
+    // Only allocate memory after being sure that it is needed.
     strlist *new = malloc(sizeof(strlist));
 
     /* If the string you want to insert is greater than the one
@@ -113,11 +113,8 @@ void free_list(strlist *head)
 int length(strlist* head)
 {
     int len;
-    strlist *cur;
-    
-    for (len = 0, cur = head; cur != NULL; ++len){
-	cur = cur->next;
-    }
+
+    for (len = 0; head != NULL; ++len, head = head->next);
     
     return len;
 }
