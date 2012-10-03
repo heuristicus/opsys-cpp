@@ -18,7 +18,7 @@ typedef struct strlist strlist;
 strlist* init_list(char*);
 int length(strlist*);
 int insert_ordered(strlist*, char*);
-void insert(strlist*, char*);
+strlist* insert(strlist*, char*);
 void print_list(strlist*);
 
 
