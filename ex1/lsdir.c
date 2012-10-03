@@ -5,11 +5,10 @@
 int main(int argc, char *argv[])
 {
     if (argc != 2){
-	perror("usage: lsdir [directory]");
+	printf("usage: lsdir [directory]\n");
 	exit(1);
     }
     
-
     DIR *dir_ptr;
     struct dirent *entry;
     strlist *list = NULL;
