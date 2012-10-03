@@ -1,41 +1,36 @@
 #include "ex1.h"
 
+/* int main(int argc, char *argv[]) */
+/* { */
+/*     strlist *list = NULL; */
+    
+/*     list = insert_ordered(list, "ab"); */
+/*     list = insert_ordered(list, "ag"); */
+/*     list = insert_ordered(list, "."); */
+/*     list = insert_ordered(list, ".."); */
+/*     list = insert_ordered(list, "01234"); */
+/*     list = insert_ordered(list, "012a4"); */
+    
+    
+/*     print_list(list); */
+/*     printf("%d\n", length(list)); */
+/*     free_list(list); */
+        
+/*     return 0; */
+/* } */
 
-int main(int argc, char *argv[])
-{
-    strlist *list = init_list("sup");
-    
-    insert_ordered(list, "ab");
-    insert_ordered(list, "ac");
-    insert_ordered(list, "ad");
-    insert_ordered(list, "ae");
-    insert_ordered(list, "af");
-    insert_ordered(list, "ag");
-    insert_ordered(list, ".");
-    insert_ordered(list, "..");
-    insert_ordered(list, "01234");
-    insert_ordered(list, "012a4");
-    
-    
-    print_list(list);
-    printf("%d\n", length(list));
-    free_list(list);
-    
-    return 0;
-}
-
-/* initialises the list and returns a pointer to the start of the list */
+/* THIS FUNCTION SHOULD ONLY BE CALLED FROM FUNCTIONS IN THIS FILE.
+   initialises the list and returns a pointer to the start of the list */
 strlist* init_list(char *str)
 {
     strlist *head = malloc(sizeof(strlist));
-
     head->s = str;
     head->next = NULL;
         
     return head;
 }
 
-/* Inserts a string into the list. */
+/* Adds a string into the list. */
 strlist* add(strlist *head, char *str)
 {
     strlist *new = malloc(sizeof(strlist));
@@ -50,6 +45,13 @@ strlist* add(strlist *head, char *str)
 */
 strlist* insert_ordered(strlist *head, char *str)
 {
+
+    /* If head is not yet initialised, put the string in and
+       return head.
+    */
+    if (head == NULL){
+	return init_list(str);
+    }
 
     strlist *new = malloc(sizeof(strlist));
 
@@ -71,13 +73,14 @@ strlist* insert_ordered(strlist *head, char *str)
        of the list. If the values are equal, the string being
        inserted will go before the one previously inserted.
     */
-    while (strcomp(str, cur->s) != 1){
+    while (cur != NULL && strcomp(str, cur->s) != 1){
 	prev = cur;
 	cur = cur->next;
     }
-
+    
     new->s = str;
     new->next = cur;
+    prev->next = new;
     
     return head;
 }

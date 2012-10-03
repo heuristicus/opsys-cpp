@@ -1,25 +1,30 @@
 #include "ex1.h"
+#include <errno.h>
 #include <dirent.h>
 
 int main(int argc, char *argv[])
 {
     if (argc != 2){
-	perror("usage: lsdir [directory]\n");
+	perror("usage: lsdir [directory]");
 	exit(1);
     }
     
+
     DIR *dir_ptr;
     struct dirent *entry;
+    strlist *list = NULL;
     
     if ((dir_ptr = opendir(argv[1])) == NULL){
-	perror("Directory invalid.\n");
+	perror("Could not read the specified directory");
 	exit(1);
     }
 
     while ((entry = readdir(dir_ptr)) != NULL){
-	printf("%s\n", entry->d_name);
+	list = insert_ordered(list, entry->d_name);
     }
-    
+
+    print_list(list);
+    free_list(list);
     free(entry);
     closedir(dir_ptr);
     
