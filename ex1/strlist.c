@@ -30,16 +30,6 @@ strlist* init_list(char *str)
     return head;
 }
 
-/* Adds a string into the list. */
-strlist* add(strlist *head, char *str)
-{
-    strlist *new = malloc(sizeof(strlist));
-    new->s = str;
-    new->next = head;
-
-    return new;
-}
-
 /* Inserts a string into the list in an ordered fashion. The head
    of the list is the string with the highest alphanumeric value.
 */
@@ -116,5 +106,6 @@ int length(strlist* head)
 
     for (len = 0; head != NULL; ++len, head = head->next);
     
+
     return len;
 }
