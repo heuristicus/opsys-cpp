@@ -1,7 +1,6 @@
 #From http://mrbook.org/tutorials/make/
-
 CC=gcc
-CFLAGS=-Wall -Werror -g
+CFLAGS=-Wall -Werror -g -D _GNU_SOURCE
 SOURCES=lsdir.c strlist.c strfunc.c
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=lsdir

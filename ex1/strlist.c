@@ -106,6 +106,5 @@ int length(strlist* head)
 
     for (len = 0; head != NULL; ++len, head = head->next);
     
-
     return len;
 }

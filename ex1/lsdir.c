@@ -12,8 +12,6 @@ int main(int argc, char *argv[])
     DIR *dir_ptr;
     struct dirent *entry;
     strlist *list = NULL;
-    
-    printf("%d\n", length(list));
 
     if ((dir_ptr = opendir(argv[1])) == NULL){
 	perror("Could not read the specified directory");
@@ -24,11 +22,9 @@ int main(int argc, char *argv[])
 	list = insert_ordered(list, entry->d_name);
     }
 
-    printf("%d\n", length(list));
     print_list(list);
     free_list(list);
-    free(entry);
     closedir(dir_ptr);
-    
+        
     return 0;
 }
