@@ -1,0 +1,11 @@
+CC=gcc
+CFLAGS=-Wall -Werror -g -D _GNU_SOURCE
+LIB=-lm
+EXECUTABLE=ex2
+
+
+all:
+
+client:
+
+server:

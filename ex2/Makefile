@@ -1,0 +1,14 @@
+CC=gcc
+CFLAGS=-Wall -Werror -g -D _GNU_SOURCE
+CLIENTSOURCES=logclient.c
+SERVERSOURCES=logserver.c
+CLIENTOBJECTS=$(CLIENTSOURCES:.c=.o)
+SERVEROBJECTS=$(SERVERSOURCES:.c=.o)
+CLIENT=logclient
+SERVER=logserver
+
+client: $(OBJECTS)
+	$(CC) $(CFLAGS) $(CLIENTOBJECTS) -o $(CLIENT)
+
+server: $(OBJECTS)
+	$(CC) $(CFLAGS) $(SERVEROBJECTS) -o $(SERVER)
