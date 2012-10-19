@@ -7,3 +7,5 @@
 #include <stdlib.h>
 #include <strings.h>
 #include <unistd.h>
+
+#define BUFFERLENGTH 256

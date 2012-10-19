@@ -1,5 +1,6 @@
 CC=gcc
 CFLAGS=-Wall -Werror -g -D _GNU_SOURCE
+LIB=-pthread
 CLIENTSOURCES=logclient.c
 SERVERSOURCES=logserver.c
 CLIENTOBJECTS=$(CLIENTSOURCES:.c=.o)
@@ -7,8 +8,13 @@ SERVEROBJECTS=$(SERVERSOURCES:.c=.o)
 CLIENT=logclient
 SERVER=logserver
 
+all: client server
+
 client: $(OBJECTS)
-	$(CC) $(CFLAGS) $(CLIENTOBJECTS) -o $(CLIENT)
+	$(CC) $(CFLAGS) $(CLIENTSOURCES) -o $(CLIENT) $(LIB)
 
 server: $(OBJECTS)
-	$(CC) $(CFLAGS) $(SERVEROBJECTS) -o $(SERVER)
+	$(CC) $(CFLAGS) $(SERVERSOURCES) -o $(SERVER) $(LIB)
+
+clean:
+	rm -rf $(CLIENTOBJECTS) $(SERVEROBJECTS) $(CLIENT) $(SERVER)
