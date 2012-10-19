@@ -96,8 +96,9 @@ int send_message(char *message, int* socket)
     int size = strlen(message);
     char *size_str = malloc(DEFAULT_STR_INT_SIZE);
     char *buffer = malloc(DEFAULT_STR_INT_SIZE);
-        
-    sprintf(size_str, DEFAULT_STR_INT_SIZE, "%d", size);
+    int n;
+    
+    snprintf(size_str, DEFAULT_STR_INT_SIZE, "%d", size);
     
     // Send a message containing the size of the message to send.
     n = write(*socket, size_str, DEFAULT_STR_INT_SIZE);
@@ -109,7 +110,7 @@ int send_message(char *message, int* socket)
     if (n < 0)
 	error("Failed to get a response to initial message.");
     
-    assert(atoi(buffer) = size); // make sure the size received is the same as the sent size
+    assert(atoi(buffer) == size); // make sure the size received is the same as the sent size
     
     n = write(*socket, message, size);
     if (n < 0)
@@ -118,7 +119,7 @@ int send_message(char *message, int* socket)
     n = read(*socket, buffer, DEFAULT_STR_INT_SIZE);
     if (n < 0)
 	error("Failed to receive a response after sending part of the message.");
-    	    
+    
     // While the "transfer complete" message is not received, keep sending.
     while(atoi(buffer) != 0){
 	// We should not come in here. Message should be sent all in one go.
