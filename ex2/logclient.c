@@ -1,4 +1,5 @@
 #include "logclient.h"
+#include "loggeneral.h"
 
 int main(int argc, char *argv[])
 {
@@ -32,10 +33,15 @@ int main(int argc, char *argv[])
      * copy the first n bytes of src to dest.
      * s_addr records the host address number as a uint32
      */
-    memcpy((char *) server->h_addr, (char *) &serv_addr.sin_addr.s_addr, server->h.length);
+    memcpy((char *) server->h_addr, (char *) &serv_addr.sin_addr.s_addr, server->h_length);
     // sin_port is the IP port. Change it to the network byte order.
     serv_addr.sin_port = htons(portno);
     
+    /* 
+     * connect (int socket, struct sockaddr *addr, socklen_t length)
+     * initiates a connection from socket to the socket whose address is specified by
+     * the addr and length arguments.
+     */
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error connecting");
     
