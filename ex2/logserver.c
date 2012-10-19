@@ -1,19 +1,26 @@
 #include "logserver.h"
 #include "loggeneral.h"
 
+char *fname;
+int returnValue;
+pthread_mutex_t lock;
+
+
 int main(int argc, char *argv[])
 {
-    if (argc < 2){
-	fprintf(stderr, "ERROR: You must provide a port number to listen on.\n");
+    if (argc < 3){
+	fprintf(stderr, "usage: %s portnumber filename\n", argv[0]);
 	exit(1);
     }
     
     size_t clilen;
-    int sockfd, newsockfd, portno;
-    char buffer[BUFFERLENGTH];
+    int sockfd, portno;
     struct sockaddr_in serv_addr, cli_addr;
-    int n;
-    
+    pthread_t *server_thread;
+    int result;
+
+    fname = argv[2];
+        
     /*
      * socket(namespace, style, protocol)
      * namespace must be PF_LOCAL or PF_INET
@@ -31,6 +38,7 @@ int main(int argc, char *argv[])
      * can be used to set segment to a specific value.
      */
     bzero ((char *) &serv_addr, sizeof(serv_addr));
+    // Set port number that the server listens on
     portno = atoi(argv[1]);
     
     // address family (must be AF_INET)
@@ -64,35 +72,89 @@ int main(int argc, char *argv[])
 	 * name of the client socket.
 	 * returns a file descriptor for a new socket which is connected to the client.
 	 */
-	newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+	int *newsockfd = malloc(sizeof(int));
+	if (!newsockfd)
+	    fprintf(stderr, "Failed to allocate memory for a new socket.\n");
 	
-	if (newsockfd < 0)
+	*newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+	
+	if (*newsockfd < 0)
 	    error("ERROR on accept");
-	bzero(buffer, BUFFERLENGTH);
+
+	server_thread = malloc(sizeof(pthread_t));
+	pthread_attr_t pthread_attr;
+	
+	if (!server_thread){
+	    fprintf(stderr, "Could not allocate memory for thread.\n");
+	    exit(1);
+	}
+	
+	// initialises the thread object with default attributes.
+	if (pthread_attr_init(&pthread_attr)){
+	    fprintf(stderr, "Creation of thread attributes failed.\n");
+	    exit(1);
+	}
+	
 	/*
-	 * read (int filedes, void *buffer, size_t size)
-	 * reads up to size bytes from the file with descriptor filedes into buffer.
-	 * returns the number of bytes actually read. zero return indicates EOF.
+	 * detached state frees all thread resources when the thread terminates.
+	 * in joinable state, thread resources are kept allocated after it terminates,
+	 * but it is possible to synchronise on the thread termination and recover
+	 * its termination code.
+	 * In this case we set the state to detached..
 	 */
-	n = read(newsockfd, buffer, BUFFERLENGTH - 1);
-	
-	if (n < 0)
-	    error("ERROR reading from socket");
-	
-	printf("Here is message %s\n", buffer);
+	if (pthread_attr_setdetachstate(&pthread_attr, PTHREAD_CREATE_DETACHED)){
+	    fprintf(stderr, "Setting thread attributes failed.\n");
+	    exit(1);
+	}
+
 	/*
-	 * write (int filedes, const void *buffer, size_t size)
-	 * writes size bytes from buffer into the file with descriptor filedes.
-	 * sockets are treated as files, so this is normal.
-	 * return is the number of bytes actually written. 
+	 * int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void*), void *arg);
+	 * creates a new thread with the attributes specified in attr. Modifying the values of attr later
+	 * will not affect thread behaviour. On successful creation, the ID of the thread is returned.
+	 * The thread starts executing start_routine with arg as its only argument.
 	 */
-	n = write(newsockfd, "I got your message", 18);
-	if (n < 0)
-	    error("ERROR writing to socket");
-	
-	close(newsockfd);
-			
+	result = pthread_create(server_thread, &pthread_attr, logstring, (void *) newsockfd);
+	if (result != 0){
+	    fprintf(stderr, "Thread creation failed.\n");
+	    exit(1);
+	}			
     }
+
     return 0;
 }
 
+/* logs a string of formal <alphanum> : <textchar> to the specified file. */
+void* logstring(void *args)
+{
+    int *newsockfd = (int *) args;
+    char buffer[BUFFERLENGTH];
+    int n;
+        
+    /*
+     * read (int filedes, void *buffer, size_t size)
+     * reads up to size bytes from the file with descriptor filedes into buffer.
+     * returns the number of bytes actually read. zero return indicates EOF.
+     */
+    n = read(*newsockfd, buffer, BUFFERLENGTH - 1);
+    if (n < 0)
+	error("ERROR reading from socket");
+	
+    printf("Received a message %s\n", buffer);
+    /*
+     * write (int filedes, const void *buffer, size_t size)
+     * writes size bytes from buffer into the file with descriptor filedes.
+     * sockets are treated as files, so this is normal.
+     * return is the number of bytes actually written. 
+     */
+    n = write(*newsockfd, "I got your message", 18);
+    if (n < 0)
+	error("ERROR writing to socket");
+	
+    // close the socket and free the memory.
+    close(*newsockfd);
+    free(newsockfd);
+    
+    // return some value as the exit status of the thread.
+    returnValue = 0;
+    pthread_exit(&returnValue);
+}
