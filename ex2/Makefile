@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-Wall -Werror -g -D _GNU_SOURCE
 LIB=-pthread
-SOURCES=util.c comms.c
+SOURCES=util.c sock_util.c
 CLIENTSOURCES=logclient.c
 SERVERSOURCES=logserver.c
 CSOURCES=$(SOURCES:.c=.o)

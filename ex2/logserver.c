@@ -1,7 +1,6 @@
 #include "logserver.h"
-#include "loggeneral.h"
 
-char *fname;
+FILE *fp;
 int returnValue;
 pthread_mutex_t lock;
 
@@ -18,8 +17,6 @@ int main(int argc, char *argv[])
     struct sockaddr_in serv_addr, cli_addr;
     pthread_t *server_thread;
     int result;
-
-    fname = argv[2];
         
     /*
      * socket(namespace, style, protocol)
@@ -59,6 +56,15 @@ int main(int argc, char *argv[])
      */
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error on binding");
+
+    // Opens the log file to enable  writing
+    open_log_file(argv[2]);
+
+    /* 
+     * Register the signal handler for SIGINT so that we can shut the server down
+     * correctly when the SIGINT signal is received.
+     */    
+    signal(SIGINT, sig_handler);
     
     /* enables the socket to accept connections - the second argument is the length of the queue. */
     listen(sockfd, 5);
@@ -123,7 +129,10 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-/* logs a string of formal <alphanum> : <textchar> to the specified file. */
+/*
+ * logs a string of formal <alphanum> : <textchar> to the file specified
+ * when the server is started up.
+ */
 void* logstring(void *args)
 {
     int *newsockfd = (int *) args;
@@ -157,4 +166,80 @@ void* logstring(void *args)
     // return some value as the exit status of the thread.
     returnValue = 0;
     pthread_exit(&returnValue);
+}
+
+/*
+ * Checks whether the given string is a valid log string. Returns 1 if true, and 
+ * 0 otherwise.
+ */
+int valid_string(char *str)
+{
+    int c_flag = 0; // whether we reached the colon or not.
+
+    for (; *str != '\0'; str++){
+	if (*str == ':'){
+	    c_flag = 1;
+	    
+	}
+	
+	// Before the colon is reached, check that characters are alphanumeric.
+	if (!isalnum(*str) && !c_flag){
+	    printf("%c is not alphanumeric\n", *str);
+	    return 0;
+	}
+	
+	// After the colon has been reached, check characters are in the valid range.
+	if (c_flag && (*str < 32 || *str > 126)){
+	    printf("%c is not in the valid range\n", *str);
+	    return 0;
+	}
+	
+		
+    }
+
+    return 1;
+}
+
+// Opens the file that we will log to.
+void open_log_file(char *filename)
+{
+    fp = fopen(filename, "a");
+}
+
+// Closes the log file. Should only be done when the server shuts down.
+void close_log_file()
+{
+    fclose(fp);
+}
+
+/*
+ * Writes a character string to the globally specified file, which should already be open.
+ * If the write fails for whatever reason, 0 is returned. Otherwise, 1 is returned.
+ */
+int write_to_file(char *str)
+{
+    int ok;
+    
+    pthread_mutex_lock(&lock);
+	
+    ok = fprintf(fp, "%s", str);
+
+    pthread_mutex_unlock(&lock);
+    
+    if (ok < 0)
+	return 0;
+    return 1;
+}
+
+// Handles the SIGINT signal. Will shut down the server.
+void sig_handler(int signo)
+{
+    printf("\nSIGINT received - shutting down server...\n");
+    if (signo == SIGINT){
+	close_log_file();
+	printf("Log file closed.\n");
+	
+	printf("Shutdown complete. Exiting.\n");
+	exit(0);
+    }
 }
