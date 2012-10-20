@@ -17,7 +17,9 @@ int main(int argc, char *argv[])
     struct sockaddr_in serv_addr, cli_addr;
     pthread_t *server_thread;
     int result;
-        
+
+    printf("Starting server listening on port %s, logging to %s.\n", argv[1], argv[2]);
+    
     /*
      * socket(namespace, style, protocol)
      * namespace must be PF_LOCAL or PF_INET
@@ -29,6 +31,8 @@ int main(int argc, char *argv[])
     
     if (sockfd < 0)
 	error("Error opening socket.");
+
+    printf("Socket opened successfully.\n");
     
     /*
      * bzero initialises memory segment to null. Similar to memset, but memset 
@@ -57,6 +61,8 @@ int main(int argc, char *argv[])
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error on binding");
 
+    printf("Socket bound to successfully.\n");
+
     // Opens the log file to enable  writing
     open_log_file(argv[2]);
 
@@ -68,6 +74,7 @@ int main(int argc, char *argv[])
     
     /* enables the socket to accept connections - the second argument is the length of the queue. */
     listen(sockfd, 5);
+    printf("Listening for connections...\n");
     clilen = sizeof(cli_addr);
     
     while(1){
@@ -84,6 +91,8 @@ int main(int argc, char *argv[])
 	
 	*newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 	
+	printf("Client connected.\n");
+	
 	if (*newsockfd < 0)
 	    error("ERROR on accept");
 
@@ -95,11 +104,15 @@ int main(int argc, char *argv[])
 	    exit(1);
 	}
 	
+	printf("Successfully created handler thread.\n");
+
 	// initialises the thread object with default attributes.
 	if (pthread_attr_init(&pthread_attr)){
 	    fprintf(stderr, "Creation of thread attributes failed.\n");
 	    exit(1);
 	}
+
+	printf("Thread attributes initialised.\n");
 	
 	/*
 	 * detached state frees all thread resources when the thread terminates.
@@ -113,12 +126,15 @@ int main(int argc, char *argv[])
 	    exit(1);
 	}
 
+	printf("Set thread state.\n");
+
 	/*
 	 * int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void*), void *arg);
 	 * creates a new thread with the attributes specified in attr. Modifying the values of attr later
 	 * will not affect thread behaviour. On successful creation, the ID of the thread is returned.
 	 * The thread starts executing start_routine with arg as its only argument.
 	 */
+	printf("Starting thread...\n");
 	result = pthread_create(server_thread, &pthread_attr, logstring, (void *) newsockfd);
 	if (result != 0){
 	    fprintf(stderr, "Thread creation failed.\n");
@@ -139,6 +155,8 @@ void* logstring(void *args)
     char buffer[BUFFERLENGTH];
     int n;
         
+    printf("Thread processing request.\n");
+
     /*
      * read (int filedes, void *buffer, size_t size)
      * reads up to size bytes from the file with descriptor filedes into buffer.
@@ -203,7 +221,9 @@ int valid_string(char *str)
 // Opens the file that we will log to.
 void open_log_file(char *filename)
 {
-    fp = fopen(filename, "a");
+    if ((fp = fopen(filename, "a")) == NULL){
+	error("Could not open the specified file.");
+    }
 }
 
 // Closes the log file. Should only be done when the server shuts down.
@@ -221,7 +241,7 @@ int write_to_file(char *str)
     int ok;
     
     pthread_mutex_lock(&lock);
-	
+
     ok = fprintf(fp, "%s", str);
 
     pthread_mutex_unlock(&lock);
