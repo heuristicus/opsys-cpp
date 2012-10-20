@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
 	if (result != 0){
 	    fprintf(stderr, "Thread creation failed.\n");
 	    exit(1);
-	}			
+	}
     }
 
     return 0;
@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
 void* logstring(void *args)
 {
     int *newsockfd = (int *) args;
-    char *buffer = malloc(BUFFERLENGTH);
+    char buffer[BUFFERLENGTH];
     int n;
         
     printf("Thread processing request.\n");
@@ -179,10 +179,12 @@ void* logstring(void *args)
 	 * return is the number of bytes actually written. 
 	 */
 	char *str;
-	if (valid_string(buffer))
+	if (valid_string(buffer)){
 	    str = "valid string";
-	else
+	    write_to_file(buffer);
+	} else {
 	    str = "invalid string";
+	}
 	n = write(*newsockfd, str, 18);
 	if (n < 0)
 	    error("ERROR writing to socket");
@@ -192,7 +194,6 @@ void* logstring(void *args)
     // close the socket and free the memory.
     close(*newsockfd);
     free(newsockfd);
-    free(buffer);
     
     // return some value as the exit status of the thread.
     returnValue = 0;
@@ -219,13 +220,11 @@ int valid_string(char *str)
 	    return 0;
 	}
 	
-	// After the colon has been reached, check characters are in the valid range.
+	// check characters after the colon are in the valid range.
 	if (c_flag && (*str < 32 || *str > 126)){
 	    printf("%c is not in the valid range\n", *str);
 	    return 0;
 	}
-	
-		
     }
 
     // if there was no colon, the string is invalid.
@@ -259,8 +258,9 @@ int write_to_file(char *str)
     
     pthread_mutex_lock(&lock);
 
-    ok = fprintf(fp, "%s", str);
-
+    ok = fprintf(fp, "%s\n", str);
+    fflush(fp);
+    
     pthread_mutex_unlock(&lock);
     
     if (ok < 0)

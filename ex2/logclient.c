@@ -1,5 +1,7 @@
 #include "logclient.h"
 
+#include <time.h>
+
 int main(int argc, char *argv[])
 {
     
@@ -36,6 +38,8 @@ int main(int argc, char *argv[])
     // sin_port is the IP port. Change it to the network byte order.
     serv_addr.sin_port = htons(portno);
     
+
+    //srand48(time(NULL));
     /* 
      * connect (int socket, struct sockaddr *addr, socklen_t length)
      * initiates a connection from socket to the socket whose address is specified by
@@ -44,9 +48,10 @@ int main(int argc, char *argv[])
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error connecting");
     while(1){	
-	printf("Please enter the message.\n");
+	//printf("Please enter the message.\n");
 	bzero(buffer, BUFFERLENGTH);
 	fgets(buffer, BUFFERLENGTH, stdin);
+	//sprintf(buffer, "%d: have a message", getpid());
 	int i;
     
 	for (i = 0; i < BUFFERLENGTH; ++i){
@@ -64,8 +69,9 @@ int main(int argc, char *argv[])
 	if (n < 0)
 	    error("Error reading from socket");
 	printf("%s yey\n", buffer);
+	
+	//usleep(drand48() * 100000);
     }
-    
     
     return 0;
 }
