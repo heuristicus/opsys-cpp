@@ -14,5 +14,5 @@
 void error(char *msg);
 
 // comms.c
-char* receive_message(int *socket);
-int send_message(char *message, int* socket);
+char* receive_message(int socket);
+int send_message(char *message, int socket);

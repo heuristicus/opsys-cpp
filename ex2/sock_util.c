@@ -15,14 +15,14 @@
  * If the number of bytes specified have been received, then a "finished" response
  * is sent and communication is over for the time being.
  */
-char* receive_message(int *socket)
+char* receive_message(int socket)
 {
     int n;
     char *buffer = malloc(INITIAL_BUFF_LEN);
     
         
     // read the size of the message to be received into the buffer.
-    n = read(*socket, buffer, INITIAL_BUFF_LEN - 1);
+    n = read(socket, buffer, INITIAL_BUFF_LEN - 1);
     if (n < 0)
 	error("Could not read initial message from socket.");
     
@@ -34,15 +34,15 @@ char* receive_message(int *socket)
     
 
     // Send the acknowledgment. Since the string is in buffer, just send that back.
-    n = write(*socket, buffer, DEFAULT_STR_INT_SIZE);
+    n = write(socket, buffer, DEFAULT_STR_INT_SIZE);
     if (n < 0)
 	error("Failed to send acknowledgment string.");
     
     // Read some bytes from the socket.
-    n = read(*socket, buffer, m_size - 1);
+    n = read(socket, buffer, m_size - 1);
     if (n < 0)
 	error("Failed to read anything from the socket.");
-	
+    printf("n is %d\n", n);
     int received = n; // add the bytes received to our sum
     
     if (received < m_size) {
@@ -55,12 +55,12 @@ char* receive_message(int *socket)
 	    printf("Received %d bytes of %d total.\n", received, m_size);
 	    snprintf(size_str, DEFAULT_STR_INT_SIZE, "%d", m_size - received);
 	    // Write the number of bytes that we have yet to receive.
-	    n = write(*socket, size_str, DEFAULT_STR_INT_SIZE);
+	    n = write(socket, size_str, DEFAULT_STR_INT_SIZE);
 	    if (n < 0)
 		error("Failed to write number of unreceived bytes.");
 	    
 	    // Read the next set of bytes from the socket.
-	    n = read(*socket, tmp, m_size - 1);
+	    n = read(socket, tmp, m_size - 1);
 	    if (n < 0)
 		error("Failed to read anything from the socket.");
 	    
@@ -73,9 +73,10 @@ char* receive_message(int *socket)
     	free(tmp);
 	free(size_str);
     }
+    printf("buffer %s\n", buffer);
 
     // Send a message containing zero - we have received everything.
-    n = write(*socket, "0", 2);
+    n = write(socket, "0", 2);
     if (n < 0)
 	error("Failed to send transfer completed message.");
         
@@ -91,9 +92,9 @@ char* receive_message(int *socket)
  * If the response is 0, all data was received, so stop.
  * Otherwise, send remaining data until the 0 message is received.
  */
-int send_message(char *message, int* socket)
+int send_message(char *message, int socket)
 {
-    int size = strlen(message);
+    int size = strlen(message) + 1;// +1 for null pointer
     char *size_str = malloc(DEFAULT_STR_INT_SIZE);
     char *buffer = malloc(DEFAULT_STR_INT_SIZE);
     int n;
@@ -101,36 +102,37 @@ int send_message(char *message, int* socket)
     snprintf(size_str, DEFAULT_STR_INT_SIZE, "%d", size);
     
     // Send a message containing the size of the message to send.
-    n = write(*socket, size_str, DEFAULT_STR_INT_SIZE);
+    n = write(socket, size_str, DEFAULT_STR_INT_SIZE);
     if (n < 0)
 	error("Failed to send initial message.");
     
     // Read the size sent back.
-    n = read(*socket, buffer, DEFAULT_STR_INT_SIZE);
+    n = read(socket, buffer, DEFAULT_STR_INT_SIZE);
     if (n < 0)
 	error("Failed to get a response to initial message.");
     
     assert(atoi(buffer) == size); // make sure the size received is the same as the sent size
     
-    n = write(*socket, message, size);
+    n = write(socket, message, size);
     if (n < 0)
 	error("Failed to send initial chunk of message.");
     
-    n = read(*socket, buffer, DEFAULT_STR_INT_SIZE);
+    n = read(socket, buffer, DEFAULT_STR_INT_SIZE);
     if (n < 0)
 	error("Failed to receive a response after sending part of the message.");
     
     // While the "transfer complete" message is not received, keep sending.
     while(atoi(buffer) != 0){
 	// We should not come in here. Message should be sent all in one go.
-	n = write(*socket, message, size);
+	n = write(socket, message, size);
 	if (n < 0)
 	    error("Failed to send remainder of message.");
     
-	n = read(*socket, buffer, DEFAULT_STR_INT_SIZE);
+	n = read(socket, buffer, DEFAULT_STR_INT_SIZE);
 	if (n < 0)
 	    error("Failed to receive a response after sending remainder of the message.");
     }
 
     return 0;
 }
+

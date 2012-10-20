@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error on binding");
 
-    printf("Socket bound to successfully.\n");
+    printf("Socket bound successfully.\n");
 
     // Opens the log file to enable  writing
     open_log_file(argv[2]);
@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
 void* logstring(void *args)
 {
     int *newsockfd = (int *) args;
-    char buffer[BUFFERLENGTH];
+    char *buffer = malloc(BUFFERLENGTH);
     int n;
         
     printf("Thread processing request.\n");
@@ -162,24 +162,37 @@ void* logstring(void *args)
      * reads up to size bytes from the file with descriptor filedes into buffer.
      * returns the number of bytes actually read. zero return indicates EOF.
      */
-    n = read(*newsockfd, buffer, BUFFERLENGTH - 1);
-    if (n < 0)
-	error("ERROR reading from socket");
+    while(1){
+	n = read(*newsockfd, buffer, BUFFERLENGTH - 1);
+	printf("n is %d after read\n", n);
+	if (n == 0)
+	    break;
+	if (n < 0)
+	    error("ERROR reading from socket");
 	
-    printf("Received a message %s\n", buffer);
-    /*
-     * write (int filedes, const void *buffer, size_t size)
-     * writes size bytes from buffer into the file with descriptor filedes.
-     * sockets are treated as files, so this is normal.
-     * return is the number of bytes actually written. 
-     */
-    n = write(*newsockfd, "I got your message", 18);
-    if (n < 0)
-	error("ERROR writing to socket");
-	
+	printf("Received a message %s...\n", buffer);
+    
+	/*
+	 * write (int filedes, const void *buffer, size_t size)
+	 * writes size bytes from buffer into the file with descriptor filedes.
+	 * sockets are treated as files, so this is normal.
+	 * return is the number of bytes actually written. 
+	 */
+	char *str;
+	if (valid_string(buffer))
+	    str = "valid string";
+	else
+	    str = "invalid string";
+	n = write(*newsockfd, str, 18);
+	if (n < 0)
+	    error("ERROR writing to socket");
+    }
+    
+    printf("EOF received\n");
     // close the socket and free the memory.
     close(*newsockfd);
     free(newsockfd);
+    free(buffer);
     
     // return some value as the exit status of the thread.
     returnValue = 0;
@@ -215,6 +228,10 @@ int valid_string(char *str)
 		
     }
 
+    // if there was no colon, the string is invalid.
+    if (!c_flag)
+	return 0;
+    
     return 1;
 }
 

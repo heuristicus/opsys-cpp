@@ -1,5 +1,4 @@
 #include "logclient.h"
-#include "loggeneral.h"
 
 int main(int argc, char *argv[])
 {
@@ -44,21 +43,29 @@ int main(int argc, char *argv[])
      */
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error connecting");
+    while(1){	
+	printf("Please enter the message.\n");
+	bzero(buffer, BUFFERLENGTH);
+	fgets(buffer, BUFFERLENGTH, stdin);
+	int i;
     
-    printf("Please enter the message.\n");
-    bzero(buffer, BUFFERLENGTH);
-    fgets(buffer, BUFFERLENGTH, stdin);
-    
-    n = write(sockfd, buffer, strlen(buffer));
-    if (n < 0)
-	error("Error writing to socket");
+	for (i = 0; i < BUFFERLENGTH; ++i){
+	    if (*(buffer + i) == '\n')
+		*(buffer + i) = '\0';
+	}
+        
+	n = write(sockfd, buffer, strlen(buffer) + 1);
+	if (n < 0)
+	    error("Error writing to socket");
 
-    bzero(buffer, BUFFERLENGTH);
+	bzero(buffer, BUFFERLENGTH);
     
-    n = read(sockfd, buffer, BUFFERLENGTH - 1);
-    if (n < 0)
-	error("Error reading from socket");
-    printf("%s\n", buffer);
+	n = read(sockfd, buffer, BUFFERLENGTH - 1);
+	if (n < 0)
+	    error("Error reading from socket");
+	printf("%s yey\n", buffer);
+    }
+    
     
     return 0;
 }
