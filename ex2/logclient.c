@@ -5,11 +5,12 @@
 int main(int argc, char *argv[])
 {
     
-    int sockfd, portno, n;
+    int sockfd, portno;
+    //int n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
     
-    char buffer[BUFFERLENGTH];
+    char buffer[STDIN_BUFFERLENGTH];
     if (argc < 3){
 	fprintf(stderr, "usage: %s hostname port\n", argv[0]);
 	exit(1);
@@ -48,27 +49,33 @@ int main(int argc, char *argv[])
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error connecting");
     while(1){	
-	//printf("Please enter the message.\n");
-	bzero(buffer, BUFFERLENGTH);
-	fgets(buffer, BUFFERLENGTH, stdin);
+	printf("Please enter the message.\n");
+	bzero(buffer, STDIN_BUFFERLENGTH);
+	fgets(buffer, STDIN_BUFFERLENGTH, stdin);
+	// get rid of newline on the end of terminal-entered input
+	if (*(buffer + strlen(buffer) - 1) == '\n')
+	    *(buffer + strlen(buffer) - 1) = '\0';
+	
+	printf("echo %s\n", buffer);
+	send_message(buffer, sockfd);
 	//sprintf(buffer, "%d: have a message", getpid());
-	int i;
+	/* int i; */
     
-	for (i = 0; i < BUFFERLENGTH; ++i){
-	    if (*(buffer + i) == '\n')
-		*(buffer + i) = '\0';
-	}
+	/* for (i = 0; i < BUFFERLENGTH; ++i){ */
+	/*     if (*(buffer + i) == '\n') */
+	/* 	*(buffer + i) = '\0'; */
+	/* } */
         
-	n = write(sockfd, buffer, strlen(buffer) + 1);
-	if (n < 0)
-	    error("Error writing to socket");
+	/* n = write(sockfd, buffer, strlen(buffer) + 1); */
+	/* if (n < 0) */
+	/*     error("Error writing to socket"); */
 
-	bzero(buffer, BUFFERLENGTH);
+	/* bzero(buffer, BUFFERLENGTH); */
     
-	n = read(sockfd, buffer, BUFFERLENGTH - 1);
-	if (n < 0)
-	    error("Error reading from socket");
-	printf("%s yey\n", buffer);
+	/* n = read(sockfd, buffer, BUFFERLENGTH - 1); */
+	/* if (n < 0) */
+	/*     error("Error reading from socket"); */
+	/* printf("%s yey\n", buffer); */
 	
 	//usleep(drand48() * 100000);
     }

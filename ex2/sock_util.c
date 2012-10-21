@@ -1,8 +1,5 @@
 #include "loggeneral.h"
 
-#define INITIAL_BUFF_LEN 20
-#define DEFAULT_STR_INT_SIZE 20
-
 /*
  * reads a message of any length from socket. Returns the whole message in a single string.
  * The protocol followed is as follows: 
@@ -18,70 +15,38 @@
 char* receive_message(int socket)
 {
     int n;
-    char *buffer = malloc(INITIAL_BUFF_LEN);
+    char *buffer = malloc(BUFFERLENGTH);
     
-        
-    // read the size of the message to be received into the buffer.
-    n = read(socket, buffer, INITIAL_BUFF_LEN - 1);
-    if (n < 0)
-	error("Could not read initial message from socket.");
-    
-    // reallocates the buffer to the size of the message to be received.
-    int m_size = atoi(buffer);
-    buffer = realloc(buffer, m_size);
-    if (buffer == NULL)
-	error("Failed to reallocate memory to store message.");
-    
+    // Read the length of the message to be received, in bytes.
+    n = do_read(socket, buffer, BUFFERLENGTH, \
+		"ERROR: Did not receive message length");
 
-    // Send the acknowledgment. Since the string is in buffer, just send that back.
-    n = write(socket, buffer, DEFAULT_STR_INT_SIZE);
-    if (n < 0)
-	error("Failed to send acknowledgment string.");
-    
-    // Read some bytes from the socket.
-    n = read(socket, buffer, m_size - 1);
-    if (n < 0)
-	error("Failed to read anything from the socket.");
-    printf("n is %d\n", n);
-    int received = n; // add the bytes received to our sum
-    
-    if (received < m_size) {
-	char *size_str = malloc(DEFAULT_STR_INT_SIZE);
-	char *tmp = malloc(m_size);
-	
-	// Loop until we receive the complete message
-	while (received < m_size){
-	    assert(received <= m_size); // make sure that something weird isn't happening.
-	    printf("Received %d bytes of %d total.\n", received, m_size);
-	    snprintf(size_str, DEFAULT_STR_INT_SIZE, "%d", m_size - received);
-	    // Write the number of bytes that we have yet to receive.
-	    n = write(socket, size_str, DEFAULT_STR_INT_SIZE);
-	    if (n < 0)
-		error("Failed to write number of unreceived bytes.");
-	    
-	    // Read the next set of bytes from the socket.
-	    n = read(socket, tmp, m_size - 1);
-	    if (n < 0)
-		error("Failed to read anything from the socket.");
-	    
-	    // copy the part of the string that we received into the buffer.
-	    strncpy(buffer + received, tmp, n);
-	    received += n;
-
-	}
-	
-    	free(tmp);
-	free(size_str);
+    if (n == 0){
+	return "EOF";
     }
-    printf("buffer %s\n", buffer);
 
-    // Send a message containing zero - we have received everything.
-    n = write(socket, "0", 2);
-    if (n < 0)
-	error("Failed to send transfer completed message.");
         
-    return buffer; // Remember to free this when you're done!
+    printf("Got %d bytes, message %s\n", n, buffer);
+        
+    int message_length = atoi(buffer);
+
+    // Send back the same message as acknowledgment
+    n = do_write(socket, buffer, strlen(buffer) + 1, \
+	      "ERROR: Could not write ack message"); // make sure to send null terminator
+    printf("Sent %d bytes, message %s\n", n, buffer);
+    printf("message length is %d\n", message_length);
+
+    if ((buffer = realloc(buffer, message_length)) == NULL)
+	error("ERROR: Could not reallocate memory for message");
+    
+    n = do_read(socket, buffer, BUFFERLENGTH, \
+		"ERROR: Could not read initial part of message");
+    
+    printf("Got %d bytes, message %s\n", n, buffer);
+
+    return buffer;
 }
+
 
 /*
  * sends a message to the specified socket. The protocol is as follows.
@@ -94,45 +59,62 @@ char* receive_message(int socket)
  */
 int send_message(char *message, int socket)
 {
-    int size = strlen(message) + 1;// +1 for null pointer
-    char *size_str = malloc(DEFAULT_STR_INT_SIZE);
-    char *buffer = malloc(DEFAULT_STR_INT_SIZE);
     int n;
+    char buffer[BUFFERLENGTH];
     
-    snprintf(size_str, DEFAULT_STR_INT_SIZE, "%d", size);
+    // Get rid of newline that comes with entering the message in the terminal.
+    /* for (n = 0; n < strlen(message); ++i){ */
+    /* 	if (*(message + i) == '\n') */
+    /* 	    *(message + i) == '\0'; */
+    /* } */
     
-    // Send a message containing the size of the message to send.
-    n = write(socket, size_str, DEFAULT_STR_INT_SIZE);
-    if (n < 0)
-	error("Failed to send initial message.");
+    sprintf(buffer, "%d", strlen(message) + 1); // null terminator
+    // Send the length of the message to be sent.
+    n = do_write(socket, buffer, strlen(buffer) + 1, \
+		 "ERROR: Could not write message length"); // don't forget null terminator
     
-    // Read the size sent back.
-    n = read(socket, buffer, DEFAULT_STR_INT_SIZE);
-    if (n < 0)
-	error("Failed to get a response to initial message.");
-    
-    assert(atoi(buffer) == size); // make sure the size received is the same as the sent size
-    
-    n = write(socket, message, size);
-    if (n < 0)
-	error("Failed to send initial chunk of message.");
-    
-    n = read(socket, buffer, DEFAULT_STR_INT_SIZE);
-    if (n < 0)
-	error("Failed to receive a response after sending part of the message.");
-    
-    // While the "transfer complete" message is not received, keep sending.
-    while(atoi(buffer) != 0){
-	// We should not come in here. Message should be sent all in one go.
-	n = write(socket, message, size);
-	if (n < 0)
-	    error("Failed to send remainder of message.");
-    
-	n = read(socket, buffer, DEFAULT_STR_INT_SIZE);
-	if (n < 0)
-	    error("Failed to receive a response after sending remainder of the message.");
-    }
+    printf("Sent %d bytes, message %s\n", n, buffer);
+        
+    // Read the response - should be the same data that was sent.
+    n = do_read(socket, buffer, BUFFERLENGTH, \
+		"ERROR: Could not read ack message");
 
-    return 0;
+    printf("Got %d bytes, message %s\n", n, buffer);
+
+    // Put the first x characters of the message into the buffer.
+    n = snprintf(buffer, BUFFERLENGTH, "%s", message);
+    printf("Put %d characters into the buffer, buffer is %s\n", n, buffer);
+    
+    n = do_write(socket, buffer, strlen(buffer) + 1, \
+		 "ERROR: Could not write initial part of message");
+    
+    return n;
 }
 
+/*
+ * Helper method for reading from a socket.
+ * Will exit the program with the given error message if something fails.
+ */
+int do_read(int socket, char *buffer, int length, char *err_msg)
+{
+    int n;
+    n = read(socket, buffer, length);
+    if (n < 0)
+	error(err_msg);
+	
+    return n;
+}
+
+/*
+ * Helper method for writing to a socket.
+ * Will exit the program with the given error message if something fails.
+ */
+int do_write(int socket, char *buffer, int length, char *err_msg)
+{
+    int n;
+    n = write(socket, buffer, length);
+    if (n < 0)
+	error(err_msg);
+
+    return n;
+}

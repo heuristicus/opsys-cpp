@@ -3,7 +3,7 @@
 FILE *fp;
 int returnValue;
 pthread_mutex_t lock;
-
+int connections_handled = 0;
 
 int main(int argc, char *argv[])
 {
@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
     struct sockaddr_in serv_addr, cli_addr;
     pthread_t *server_thread;
     int result;
-
+    
     printf("Starting server listening on port %s, logging to %s.\n", argv[1], argv[2]);
     
     /*
@@ -140,6 +140,9 @@ int main(int argc, char *argv[])
 	    fprintf(stderr, "Thread creation failed.\n");
 	    exit(1);
 	}
+	free(server_thread);
+	
+	connections_handled++;
     }
 
     return 0;
@@ -152,8 +155,8 @@ int main(int argc, char *argv[])
 void* logstring(void *args)
 {
     int *newsockfd = (int *) args;
-    char buffer[BUFFERLENGTH];
-    int n;
+    //char buffer[BUFFERLENGTH];
+    //int n;
         
     printf("Thread processing request.\n");
 
@@ -162,39 +165,46 @@ void* logstring(void *args)
      * reads up to size bytes from the file with descriptor filedes into buffer.
      * returns the number of bytes actually read. zero return indicates EOF.
      */
+    char *message;
     while(1){
-	n = read(*newsockfd, buffer, BUFFERLENGTH - 1);
-	printf("n is %d after read\n", n);
-	if (n == 0)
+	message = receive_message(*newsockfd);
+	if (strcmp(message, "EOF") == 0){
 	    break;
-	if (n < 0)
-	    error("ERROR reading from socket");
-	
-	printf("Received a message %s...\n", buffer);
-    
-	/*
-	 * write (int filedes, const void *buffer, size_t size)
-	 * writes size bytes from buffer into the file with descriptor filedes.
-	 * sockets are treated as files, so this is normal.
-	 * return is the number of bytes actually written. 
-	 */
-	char *str;
-	if (valid_string(buffer)){
-	    str = "valid string";
-	    write_to_file(buffer);
-	} else {
-	    str = "invalid string";
 	}
-	n = write(*newsockfd, str, 18);
-	if (n < 0)
-	    error("ERROR writing to socket");
+	free(message);
+		
+	/* n = read(*newsockfd, buffer, BUFFERLENGTH - 1); */
+	/* printf("n is %d after read\n", n); */
+	/* if (n == 0) */
+	/*     break; */
+	/* if (n < 0) */
+	/*     error("ERROR reading from socket"); */
+	
+	/* printf("Received a message %s...\n", buffer); */
+    
+	/* /\* */
+	/*  * write (int filedes, const void *buffer, size_t size) */
+	/*  * writes size bytes from buffer into the file with descriptor filedes. */
+	/*  * sockets are treated as files, so this is normal. */
+	/*  * return is the number of bytes actually written.  */
+	/*  *\/ */
+	/* char *str; */
+	/* if (valid_string(buffer)){ */
+	/*     str = "valid string"; */
+	/*     write_to_file(buffer); */
+	/* } else { */
+	/*     str = "invalid string"; */
+	/* } */
+	/* n = write(*newsockfd, str, 18); */
+	/* if (n < 0) */
+	/*     error("ERROR writing to socket"); */
     }
     
     printf("EOF received\n");
     // close the socket and free the memory.
     close(*newsockfd);
     free(newsockfd);
-    
+        
     // return some value as the exit status of the thread.
     returnValue = 0;
     pthread_exit(&returnValue);
@@ -272,6 +282,7 @@ int write_to_file(char *str)
 void sig_handler(int signo)
 {
     printf("\nSIGINT received - shutting down server...\n");
+    printf("Total number of connections handled: %d\n", connections_handled);
     if (signo == SIGINT){
 	close_log_file();
 	printf("Log file closed.\n");
