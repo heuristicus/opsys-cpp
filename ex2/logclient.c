@@ -52,6 +52,7 @@ int main(int argc, char *argv[])
 	printf("Please enter the message.\n");
 	bzero(buffer, STDIN_BUFFERLENGTH);
 	if (fgets(buffer, STDIN_BUFFERLENGTH, stdin) == NULL){
+	    printf("Received EOF - exiting.\n");
 	    exit(0);
 	}
 

@@ -1,5 +1,5 @@
 #include "loggeneral.h"
-
+#include <pthread.h>
 /*
  * reads a message of any length from socket. Returns the whole message in a single string.
  * The protocol followed is as follows: 
@@ -14,9 +14,10 @@
  */
 char* receive_message(int socket)
 {
-    int n;
+    int n, remaining;
     char *buffer = malloc(BUFFERLENGTH);
-    
+    char *message;
+        
     // Read the length of the message to be received, in bytes.
     n = do_read(socket, buffer, BUFFERLENGTH, \
 		"ERROR: Did not receive message length");
@@ -29,22 +30,31 @@ char* receive_message(int socket)
     printf("Got %d bytes, message %s\n", n, buffer);
         
     int message_length = atoi(buffer);
-
+    remaining = message_length;
+    
     // Send back the same message as acknowledgment
     n = do_write(socket, buffer, strlen(buffer) + 1, \
 	      "ERROR: Could not write ack message"); // make sure to send null terminator
     printf("Sent %d bytes, message %s\n", n, buffer);
     printf("message length is %d\n", message_length);
 
-    if ((buffer = realloc(buffer, message_length)) == NULL)
+    if ((message = malloc(message_length)) == NULL)
 	error("ERROR: Could not reallocate memory for message");
     
     n = do_read(socket, buffer, BUFFERLENGTH, \
 		"ERROR: Could not read initial part of message");
-    
-    printf("Got %d bytes, message %s\n", n, buffer);
+    remaining -= n;
+    printf("Got %d bytes, message %s. %d of %d bytes not yet received.\n", n, buffer, remaining, message_length);
+    sprintf(message, buffer, BUFFERLENGTH);
+    while (remaining != 0){
+	printf("Reading remaining %d bytes.\n", remaining);
+	n = do_read(socket, buffer, BUFFERLENGTH, \
+		"ERROR: Could not read initial part of message");
+    }
 
-    return buffer;
+    free(buffer);
+        
+    return message;
 }
 
 
@@ -101,7 +111,13 @@ int do_read(int socket, char *buffer, int length, char *err_msg)
     n = read(socket, buffer, length);
     if (n < 0)
 	error(err_msg);
-	
+
+    if (n == 0){
+	printf("Received EOF. Exiting.\n");
+	free(buffer);
+	pthread_exit(0);
+    }
+            	
     return n;
 }
 
