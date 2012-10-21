@@ -51,13 +51,16 @@ int main(int argc, char *argv[])
     while(1){	
 	printf("Please enter the message.\n");
 	bzero(buffer, STDIN_BUFFERLENGTH);
-	fgets(buffer, STDIN_BUFFERLENGTH, stdin);
+	if (fgets(buffer, STDIN_BUFFERLENGTH, stdin) == NULL){
+	    exit(0);
+	}
+
 	// get rid of newline on the end of terminal-entered input
-	if (*(buffer + strlen(buffer) - 1) == '\n')
-	    *(buffer + strlen(buffer) - 1) = '\0';
+	    if (*(buffer + strlen(buffer) - 1) == '\n')
+		*(buffer + strlen(buffer) - 1) = '\0';
+
+	    send_message(buffer, sockfd);
 	
-	printf("echo %s\n", buffer);
-	send_message(buffer, sockfd);
 	//sprintf(buffer, "%d: have a message", getpid());
 	/* int i; */
     

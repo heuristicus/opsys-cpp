@@ -11,6 +11,9 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "usage: %s portnumber filename\n", argv[0]);
 	exit(1);
     }
+
+    // Attempt to open the log file - if invalid, exit.
+    open_log_file(argv[2]);
     
     size_t clilen;
     int sockfd, portno;
@@ -63,8 +66,6 @@ int main(int argc, char *argv[])
 
     printf("Socket bound successfully.\n");
 
-    // Opens the log file to enable  writing
-    open_log_file(argv[2]);
 
     /* 
      * Register the signal handler for SIGINT so that we can shut the server down
@@ -200,7 +201,7 @@ void* logstring(void *args)
 	/*     error("ERROR writing to socket"); */
     }
     
-    printf("EOF received\n");
+    printf("EOF received, destroying thread.\n");
     // close the socket and free the memory.
     close(*newsockfd);
     free(newsockfd);
@@ -248,7 +249,7 @@ int valid_string(char *str)
 void open_log_file(char *filename)
 {
     if ((fp = fopen(filename, "a")) == NULL){
-	error("Could not open the specified file.");
+	error("Could not open the specified file for logging.");
     }
 }
 

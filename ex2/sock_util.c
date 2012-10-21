@@ -21,7 +21,7 @@ char* receive_message(int socket)
     n = do_read(socket, buffer, BUFFERLENGTH, \
 		"ERROR: Did not receive message length");
 
-    if (n == 0){
+    if (n == 0 || atoi(buffer) == EOF){
 	return "EOF";
     }
 
@@ -83,7 +83,7 @@ int send_message(char *message, int socket)
 
     // Put the first x characters of the message into the buffer.
     n = snprintf(buffer, BUFFERLENGTH, "%s", message);
-    printf("Put %d characters into the buffer, buffer is %s\n", n, buffer);
+    printf("Put %d characters into the buffer (not including null terminator), buffer is %s\n", n, buffer);
     
     n = do_write(socket, buffer, strlen(buffer) + 1, \
 		 "ERROR: Could not write initial part of message");
