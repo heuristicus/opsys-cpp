@@ -4,7 +4,6 @@ FILE *fp;
 int returnValue;
 pthread_mutex_t lock;
 int connections_handled = 0;
-t_struct *threads[MAX_THREADS];
 
 int main(int argc, char *argv[])
 {
@@ -87,21 +86,15 @@ int main(int argc, char *argv[])
 	 * name of the client socket.
 	 * returns a file descriptor for a new socket which is connected to the client.
 	 */
-	t_struct *n_thread = malloc(sizeof(t_struct));
-	if (!n_thread)
-	    fprintf(stderr, "Failed to allocate memory for thread struct.\n");
+	int *newsockfd = malloc(sizeof(int));
+	if (!newsockfd)
+	    fprintf(stderr, "Failed to allocate memory for a new socket.\n");
 	
-	/*
-	 * Set up the struct that we will pass to the thread. This will store the
-	 * socket reference and an integer that we will check periodically for
-	 * shutdown requests.
-	 */
-	n_thread->socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-	n_thread->shutdown_request = 0;
+	*newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 	
 	printf("Client connected.\n");
 	
-	if (n_thread->socket < 0)
+	if (*newsockfd < 0)
 	    error("ERROR on accept");
 
 	server_thread = malloc(sizeof(pthread_t));
@@ -143,7 +136,7 @@ int main(int argc, char *argv[])
 	 * The thread starts executing start_routine with arg as its only argument.
 	 */
 	printf("Starting thread...\n");
-	result = pthread_create(server_thread, &pthread_attr, logstring, (void *) n_thread);
+	result = pthread_create(server_thread, &pthread_attr, logstring, (void *) newsockfd);
 	if (result != 0){
 	    fprintf(stderr, "Thread creation failed.\n");
 	    exit(1);
@@ -162,7 +155,7 @@ int main(int argc, char *argv[])
  */
 void* logstring(void *args)
 {
-    t_struct *t_vals = (t_struct*) args;
+    int *newsockfd = (int *) args;
     //char buffer[BUFFERLENGTH];
     //int n;
         
@@ -175,11 +168,11 @@ void* logstring(void *args)
      */
     char *message;
     while(1){
-	message = receive_message(t_vals->socket);
+	message = receive_message(*newsockfd);
 	if (strcmp(message, "EOF") == 0){
 	    break;
 	}
-	printf("Got message to log to file: %s\n", message);
+	printf("Got message to log to file %s\n", message);
 	free(message);
 		
 	/* n = read(*newsockfd, buffer, BUFFERLENGTH - 1); */
@@ -211,8 +204,8 @@ void* logstring(void *args)
     
     printf("Client disconnected, thread exiting.\n");
     // close the socket and free the memory.
-    close(t_vals->socket);
-    free(t_vals);
+    close(*newsockfd);
+    free(newsockfd);
         
     // return some value as the exit status of the thread.
     returnValue = 0;
@@ -285,11 +278,6 @@ int write_to_file(char *str)
     if (ok < 0)
 	return 0;
     return 1;
-}
-
-void kill_threads()
-{
-    
 }
 
 // Handles the SIGINT signal. Will shut down the server.

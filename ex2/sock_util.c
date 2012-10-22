@@ -33,7 +33,7 @@ char* receive_message(int socket)
     remaining = message_length;
     
     // Send back the same message as acknowledgment
-    n = do_write(socket, buffer, strlen(buffer) + 1, \
+    n = do_write(socket, buffer, strlen(buffer), \
 	      "ERROR: Could not write ack message"); // make sure to send null terminator
     printf("Sent %d bytes, message %s\n", n, buffer);
     printf("message length is %d\n", message_length);
@@ -44,12 +44,18 @@ char* receive_message(int socket)
     n = do_read(socket, buffer, BUFFERLENGTH, \
 		"ERROR: Could not read initial part of message");
     remaining -= n;
-    printf("Got %d bytes, message %s. %d of %d bytes not yet received.\n", n, buffer, remaining, message_length);
+    printf("Got %d bytes, buffer is %s. %d of %d bytes not yet received.\n", n, buffer, remaining, message_length);
     sprintf(message, buffer, BUFFERLENGTH);
+    printf("wrote buffer into message string, %s\n", message);
     while (remaining != 0){
+	// Move the pointer in the message string to point to the first unsent character.
 	printf("Reading remaining %d bytes.\n", remaining);
 	n = do_read(socket, buffer, BUFFERLENGTH, \
 		"ERROR: Could not read initial part of message");
+	printf("Received %d bytes. Buffer is %s\n", n, buffer);
+	strcpy(message + strlen(message), buffer);
+	printf("copied received into message: %s\n", message);
+	remaining -= n;
     }
 
     free(buffer);
@@ -69,14 +75,8 @@ char* receive_message(int socket)
  */
 int send_message(char *message, int socket)
 {
-    int n;
+    int n, remaining = strlen(message) + 1;
     char buffer[BUFFERLENGTH];
-    
-    // Get rid of newline that comes with entering the message in the terminal.
-    /* for (n = 0; n < strlen(message); ++i){ */
-    /* 	if (*(message + i) == '\n') */
-    /* 	    *(message + i) == '\0'; */
-    /* } */
     
     sprintf(buffer, "%d", strlen(message) + 1); // null terminator
     // Send the length of the message to be sent.
@@ -91,13 +91,45 @@ int send_message(char *message, int socket)
 
     printf("Got %d bytes, message %s\n", n, buffer);
 
-    // Put the first x characters of the message into the buffer.
-    n = snprintf(buffer, BUFFERLENGTH, "%s", message);
-    printf("Put %d characters into the buffer (not including null terminator), buffer is %s\n", n, buffer);
+    /*
+     * Put the first BUFFERLENGTH -1 characters of the message into the buffer,
+     * and cap off with a null terminator.
+     */
+    snprintf(buffer, BUFFERLENGTH, "%s", message);
+
+    printf("Put %d characters into the buffer (not including null terminator), buffer is %s\n", strlen(buffer), buffer);
     
-    n = do_write(socket, buffer, strlen(buffer) + 1, \
-		 "ERROR: Could not write initial part of message");
+    // Don't add the null terminator - only want to count the one on the end of the whole message.
+    n = do_write(socket, buffer, strlen(buffer) + 1,			\
+		 "ERROR: Could not write initial part of message");	
     
+    remaining -= n;
+    
+    printf("%d of %d bytes not yet sent.\n", remaining, strlen(message) + 1);
+    if (remaining != 0 ){
+	
+    }
+    
+    while (remaining != 0){
+	// Move the pointer in the message string to point to the first unsent character.
+	printf("message points to %c, whole string: %s\n", *message, message);
+	message += n;
+	printf("message now points to %c, whole string: %s\n", *message, message);
+	// Put the rest of the 
+	int chars_to_write = remaining < BUFFERLENGTH ? remaining : BUFFERLENGTH;
+	
+	printf("writing %d characters\n", chars_to_write);
+
+	snprintf(buffer, chars_to_write, "%s", message);
+	printf("n is %d. Remaining bytes: %d, buffer is %s\n", n, remaining, buffer);
+	n = do_write(socket, buffer, strlen(buffer) + 1, \
+		     "ERROR: Could not write remainder of message.");
+		
+	remaining -= n;
+	sleep(2);
+    }
+    
+        
     return n;
 }
 
