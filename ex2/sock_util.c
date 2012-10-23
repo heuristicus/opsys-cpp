@@ -6,11 +6,8 @@
  * The first message received contains the size n in bytes of the message to be sent.
  * The response is a string acknowledging receipt, which is the size that was received.
  * The next message is a number of bytes b, 0 < b <= n.
- * If b < n, a response is sent with the number of bytes left to receive,
- * and this process will continue until the number of bytes read corresponds with
- * the number of bytes that were supposed to be sent.
- * If the number of bytes specified have been received, then a "finished" response
- * is sent and communication is over for the time being.
+ * If the message received is the whole message, then return it, otherwise keep
+ * reading data from the socket until the whole message is received.
  */
 char* receive_message(int socket)
 {
@@ -68,7 +65,8 @@ char* receive_message(int socket)
 	    remaining -= n;
     }
 
-    sprintf(buffer, "%d", remaining);
+    sprintf(buffer, "%s", "remaining");
+    printf("remaining %d, buffer %s\n", remaining, buffer);
     
     n = do_write(socket, buffer, strlen(buffer) + 1, \
 		 "ERROR: Failed to send transfer complete message.");
@@ -88,9 +86,8 @@ char* receive_message(int socket)
  * The response will echo that value.
  * The first chunk of data is sent to the socket.
  * If the response is 0, all data was received, so stop.
- * Otherwise, send remaining data until the 0 message is received.
  */
-int send_message(char *message, int socket)
+void send_message(char *message, int socket)
 {
     int n, remaining = strlen(message) + 1;
     char buffer[BUFFERLENGTH];
@@ -152,16 +149,7 @@ int send_message(char *message, int socket)
 	sleep(2);
     }
     
-    n = do_read(socket, buffer, BUFFERLENGTH, \
-		"ERROR: Could not read transfer complete ack.");
-    
-    int serv_rec = atoi(buffer);
-
-    assert(serv_rec == 0);
-    
-    printf("Message transfer complete. Sent %d bytes.\n", strlen(message) + 1);
-            
-    return serv_rec;
+    return;
 }
 
 /*

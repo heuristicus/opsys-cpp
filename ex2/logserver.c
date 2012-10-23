@@ -167,41 +167,28 @@ void* logstring(void *args)
      * returns the number of bytes actually read. zero return indicates EOF.
      */
     char *message;
+    char *valid = malloc(2);
     while(1){
 	message = receive_message(*newsockfd);
 	if (strcmp(message, "EOF") == 0){
 	    break;
 	}
 	printf("Got message to log to file %s\n", message);
-	free(message);
-		
-	/* n = read(*newsockfd, buffer, BUFFERLENGTH - 1); */
-	/* printf("n is %d after read\n", n); */
-	/* if (n == 0) */
-	/*     break; */
-	/* if (n < 0) */
-	/*     error("ERROR reading from socket"); */
+	int reply = 0;
+	if (!valid_string(message))
+	    reply = -1;
+
+	sprintf(valid, "%d", reply);
 	
-	/* printf("Received a message %s...\n", buffer); */
-    
-	/* /\* */
-	/*  * write (int filedes, const void *buffer, size_t size) */
-	/*  * writes size bytes from buffer into the file with descriptor filedes. */
-	/*  * sockets are treated as files, so this is normal. */
-	/*  * return is the number of bytes actually written.  */
-	/*  *\/ */
-	/* char *str; */
-	/* if (valid_string(buffer)){ */
-	/*     str = "valid string"; */
-	/*     write_to_file(buffer); */
-	/* } else { */
-	/*     str = "invalid string"; */
-	/* } */
-	/* n = write(*newsockfd, str, 18); */
-	/* if (n < 0) */
-	/*     error("ERROR writing to socket"); */
+	do_write(*newsockfd, valid, strlen(valid) + 1, \
+		 "ERROR: Failed to send message validation result.");
+		
+	free(message);
+	
     }
-    
+
+    free(valid);
+        
     printf("Client disconnected, thread exiting.\n");
     // close the socket and free the memory.
     close(*newsockfd);

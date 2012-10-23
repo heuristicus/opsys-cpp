@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <assert.h>
 
-#define BUFFERLENGTH 31
+#define BUFFERLENGTH 32
 #define STDIN_BUFFERLENGTH 512
 
 // util.c
@@ -16,6 +16,6 @@ void error(char *msg);
 
 // sock_util.c
 char* receive_message(int socket);
-int send_message(char *message, int socket);
+void send_message(char *message, int socket);
 int do_write(int socket, char *buffer, int length, char *err_msg);
 int do_read(int socket, char *buffer, int length, char *err_msg);

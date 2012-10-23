@@ -48,6 +48,7 @@ int main(int argc, char *argv[])
      */
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error connecting");
+    char *valid = malloc(2);
     while(1){	
 	printf("Please enter the message.\n");
 	bzero(buffer, STDIN_BUFFERLENGTH);
@@ -57,32 +58,18 @@ int main(int argc, char *argv[])
 	}
 
 	// get rid of newline on the end of terminal-entered input
-	    if (*(buffer + strlen(buffer) - 1) == '\n')
-		*(buffer + strlen(buffer) - 1) = '\0';
-
-	    send_message(buffer, sockfd);
+	if (*(buffer + strlen(buffer) - 1) == '\n')
+	    *(buffer + strlen(buffer) - 1) = '\0';
 	
-	//sprintf(buffer, "%d: have a message", getpid());
-	/* int i; */
-    
-	/* for (i = 0; i < BUFFERLENGTH; ++i){ */
-	/*     if (*(buffer + i) == '\n') */
-	/* 	*(buffer + i) = '\0'; */
-	/* } */
-        
-	/* n = write(sockfd, buffer, strlen(buffer) + 1); */
-	/* if (n < 0) */
-	/*     error("Error writing to socket"); */
-
-	/* bzero(buffer, BUFFERLENGTH); */
-    
-	/* n = read(sockfd, buffer, BUFFERLENGTH - 1); */
-	/* if (n < 0) */
-	/*     error("Error reading from socket"); */
-	/* printf("%s yey\n", buffer); */
+	send_message(buffer, sockfd);
 	
-	//usleep(drand48() * 100000);
+	do_read(sockfd, valid, 2, \
+		"ERROR: Failed to read message validation result");
+	
+	printf("Message was %s.\n", atoi(valid) == -1 ? "invalid" : "valid");
     }
-    
+
+    free(valid);
+        
     return 0;
 }
