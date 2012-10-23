@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <assert.h>
 
-#define BUFFERLENGTH 20
+#define BUFFERLENGTH 31
 #define STDIN_BUFFERLENGTH 512
 
 // util.c
