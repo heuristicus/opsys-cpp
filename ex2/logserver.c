@@ -172,12 +172,19 @@ void* logstring(void *args)
 	if (strcmp(message, "EOF") == 0){
 	    break;
 	}
-	printf("Got message to log to file %s\n", message);
+
 	int v = valid_string(message);
-	printf("checkign validity\n");
 	send_message_valid(v, *newsockfd);
-			
+
+	printf("Message %s was %s.\n", message, v == 0 ? "invalid" : "valid");
+
+	if (v != 0){
+	    write_to_file(message);
+	}
+	    
 	free(message);
+	printf("\n");
+	
     }
     
     printf("Client disconnected, thread exiting.\n");
@@ -245,6 +252,8 @@ void close_log_file()
 int write_to_file(char *str)
 {
     int ok;
+    
+    printf("Logging %s to file.\n", str);
     
     pthread_mutex_lock(&lock);
 

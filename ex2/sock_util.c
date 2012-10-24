@@ -171,7 +171,6 @@ int send_message(char *message, int socket)
  */ 
 void send_message_valid(int message, int socket)
 {
-    printf("Sending validation message %d\n", message);
     char* v = malloc(sizeof(int));
     
     sprintf(v, "%d", message);
@@ -190,14 +189,12 @@ void send_message_valid(int message, int socket)
 int receive_message_valid(int socket)
 {
     printf("Receiving validation message...\n");
-
+    
     char* v = malloc(2);
     
     do_read(socket, v, 2, \
 	    "ERROR: Could not read validation message.");
     
-    printf("Validation message received: %d\n", atoi(v));
-
     return atoi(v);
 }
 
