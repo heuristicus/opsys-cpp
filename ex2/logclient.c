@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
      */
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error connecting");
-    char *valid = malloc(2);
+
     while(1){	
 	printf("Please enter the message.\n");
 	bzero(buffer, STDIN_BUFFERLENGTH);
@@ -61,15 +61,11 @@ int main(int argc, char *argv[])
 	if (*(buffer + strlen(buffer) - 1) == '\n')
 	    *(buffer + strlen(buffer) - 1) = '\0';
 	
-	send_message(buffer, sockfd);
-	
-	do_read(sockfd, valid, 2, \
-		"ERROR: Failed to read message validation result");
-	
-	printf("Message was %s.\n", atoi(valid) == -1 ? "invalid" : "valid");
+	    int valid = receive_message_valid(sockfd);
+	    printf("Message %s was %s.\n", buffer, valid == 0 ? "invalid" : "valid");
+	    printf("\n");
     }
 
-    free(valid);
-        
+
     return 0;
 }

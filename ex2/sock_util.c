@@ -89,11 +89,12 @@ char* receive_message(int socket)
  */
 void send_message(char *message, int socket)
 {
-    int n, remaining = strlen(message) + 1;
+    int message_length = strlen(message) + 1;
+    int n, remaining = message_length;
     char buffer[BUFFERLENGTH];
     printf("Sending message %s...\n", message);
     
-    sprintf(buffer, "%d", strlen(message) + 1); // null terminator
+    sprintf(buffer, "%d", message_length); // null terminator
     // Send the length of the message to be sent.
     n = do_write(socket, buffer, strlen(buffer) + 1, \
 		 "ERROR: Could not write message length"); // don't forget null terminator
@@ -123,7 +124,7 @@ void send_message(char *message, int socket)
     else
 	remaining -= n;
         
-    //printf("%d of %d bytes not yet sent.\n", remaining, strlen(message) + 1);
+    //printf("%d of %d bytes not yet sent.\n", remaining, message_length);
     
     while (remaining != 0){
 	// Move the pointer in the message string to point to the first unsent character.
@@ -133,7 +134,7 @@ void send_message(char *message, int socket)
 	// Put the rest of the 
 	int chars_to_write = remaining < BUFFERLENGTH ? remaining : BUFFERLENGTH;
 	
-	//printf("writing %d characters\n", chars_to_write);
+	printf("writing %d characters\n", chars_to_write);
 
 	snprintf(buffer, chars_to_write, "%s", message);
 	//printf("n is %d. Remaining bytes: %d, buffer is %s\n", n, remaining, buffer);
@@ -146,10 +147,56 @@ void send_message(char *message, int socket)
 	else
 	    remaining -= n;
 	
-	sleep(2);
+	//sleep(2);
     }
     
-    return;
+    n = do_read(socket, buffer, BUFFERLENGTH, \
+		"ERROR: Could not read transfer complete ack.");
+    
+    int serv_rec = atoi(buffer);
+
+    assert(serv_rec == 0);
+    
+    printf("Message transfer complete. Sent %d bytes.\n", message_length);
+            
+    return serv_rec;
+
+}
+
+/*
+ * Sends a message containing a single integer which contains information
+ * about the validity of the message that was received. 0 implies invalidity, 1 validity.
+ */ 
+void send_message_valid(int message, int socket)
+{
+    printf("Sending validation message %d\n", message);
+    char* v = malloc(sizeof(int));
+    
+    sprintf(v, "%d", message);
+    
+    do_write(socket, v, strlen(v),\
+	     "ERROR: Could not send validation message.");
+    
+    printf("Validation message sent successfully.\n");
+    
+}
+
+/*
+ * Receives a message containing an integer which contains information about
+ * the validity of the message that was sent. 0 implies invalidity, 1 validity
+ */ 
+int receive_message_valid(int socket)
+{
+    printf("Receiving validation message...\n");
+
+    char* v = malloc(2);
+    
+    do_read(socket, v, 2, \
+	    "ERROR: Could not read validation message.");
+    
+    printf("Validation message received: %d\n", atoi(v));
+
+    return atoi(v);
 }
 
 /*

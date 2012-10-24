@@ -19,3 +19,5 @@ char* receive_message(int socket);
 void send_message(char *message, int socket);
 int do_write(int socket, char *buffer, int length, char *err_msg);
 int do_read(int socket, char *buffer, int length, char *err_msg);
+void send_message_valid(int message, int socket);
+int receive_message_valid(int socket);

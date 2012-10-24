@@ -174,17 +174,12 @@ void* logstring(void *args)
 	    break;
 	}
 	printf("Got message to log to file %s\n", message);
-	int reply = 0;
-	if (!valid_string(message))
-	    reply = -1;
 
-	sprintf(valid, "%d", reply);
-	
-	do_write(*newsockfd, valid, strlen(valid) + 1, \
-		 "ERROR: Failed to send message validation result.");
-		
+	int v = valid_string(message);
+	printf("checkign validity\n");
+	send_message_valid(v, *newsockfd);
+			
 	free(message);
-	
     }
 
     free(valid);
