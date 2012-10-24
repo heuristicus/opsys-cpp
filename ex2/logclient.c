@@ -62,26 +62,9 @@ int main(int argc, char *argv[])
 
 	    send_message(buffer, sockfd);
 	
-	//sprintf(buffer, "%d: have a message", getpid());
-	/* int i; */
-    
-	/* for (i = 0; i < BUFFERLENGTH; ++i){ */
-	/*     if (*(buffer + i) == '\n') */
-	/* 	*(buffer + i) = '\0'; */
-	/* } */
-        
-	/* n = write(sockfd, buffer, strlen(buffer) + 1); */
-	/* if (n < 0) */
-	/*     error("Error writing to socket"); */
-
-	/* bzero(buffer, BUFFERLENGTH); */
-    
-	/* n = read(sockfd, buffer, BUFFERLENGTH - 1); */
-	/* if (n < 0) */
-	/*     error("Error reading from socket"); */
-	/* printf("%s yey\n", buffer); */
-	
-	//usleep(drand48() * 100000);
+	    int valid = receive_message_valid(sockfd);
+	    printf("Message %s was %s.\n", buffer, valid == 0 ? "invalid" : "valid");
+	    printf("\n");
     }
     
     return 0;

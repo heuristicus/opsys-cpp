@@ -173,33 +173,11 @@ void* logstring(void *args)
 	    break;
 	}
 	printf("Got message to log to file %s\n", message);
+	int v = valid_string(message);
+	printf("checkign validity\n");
+	send_message_valid(v, *newsockfd);
+			
 	free(message);
-		
-	/* n = read(*newsockfd, buffer, BUFFERLENGTH - 1); */
-	/* printf("n is %d after read\n", n); */
-	/* if (n == 0) */
-	/*     break; */
-	/* if (n < 0) */
-	/*     error("ERROR reading from socket"); */
-	
-	/* printf("Received a message %s...\n", buffer); */
-    
-	/* /\* */
-	/*  * write (int filedes, const void *buffer, size_t size) */
-	/*  * writes size bytes from buffer into the file with descriptor filedes. */
-	/*  * sockets are treated as files, so this is normal. */
-	/*  * return is the number of bytes actually written.  */
-	/*  *\/ */
-	/* char *str; */
-	/* if (valid_string(buffer)){ */
-	/*     str = "valid string"; */
-	/*     write_to_file(buffer); */
-	/* } else { */
-	/*     str = "invalid string"; */
-	/* } */
-	/* n = write(*newsockfd, str, 18); */
-	/* if (n < 0) */
-	/*     error("ERROR writing to socket"); */
     }
     
     printf("Client disconnected, thread exiting.\n");
