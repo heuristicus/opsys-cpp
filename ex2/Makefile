@@ -1,22 +1,17 @@
-CC=gcc
 CFLAGS=-Wall -Werror -g -D _GNU_SOURCE
+CC=gcc $(CFLAGS)
 LIB=-pthread
-SOURCES=util.c sock_util.c
-CLIENTSOURCES=logclient.c
-SERVERSOURCES=logserver.c
-CSOURCES=$(SOURCES:.c=.o)
-CLIENTOBJECTS=$(CLIENTSOURCES:.c=.o)
-SERVEROBJECTS=$(SERVERSOURCES:.c=.o)
-CLIENT=logclient
-SERVER=logserver
 
-all: client server
+all: logclient logserver
 
-client: $(OBJECTS)
-	$(CC) $(CFLAGS) $(SOURCES) $(CLIENTSOURCES) -o $(CLIENT) $(LIB)
+logclient: logclient.o sock_util.o logclient.h 
+	$(CC) logclient.o sock_util.o -o $@
 
-server: $(OBJECTS)
-	$(CC) $(CFLAGS) $(SOURCES) $(SERVERSOURCES) -o $(SERVER) $(LIB)
+logserver: logserver.o sock_util.o logserver.h
+	$(CC) logserver.o sock_util.o $(LIB) -o $@ 
+
+sock_util.o: sock_util.c loggeneral.h
+	$(CC) -c $< -o $@
 
 clean:
-	rm -rf $(CLIENTOBJECTS) $(SERVEROBJECTS) $(CSOURCES) $(CLIENT) $(SERVER)
+	rm -f logclient logserver *.o
