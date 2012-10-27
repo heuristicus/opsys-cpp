@@ -4,11 +4,12 @@
 #include <signal.h>
 #include <time.h>
 
+int terminated = 0;
+
 int main(int argc, char *argv[])
 {
     
     int sockfd, portno;
-    //int n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
     
@@ -64,7 +65,8 @@ int main(int argc, char *argv[])
     while(1){	
 	printf("Please enter the message.\n");
 	bzero(buffer, STDIN_BUFFERLENGTH);
-	if (fgets(buffer, STDIN_BUFFERLENGTH, stdin) == NULL){
+	// Messages that exceed the length of the stdin_bufferlength will be truncated.
+	if (fgets(buffer, STDIN_BUFFERLENGTH, stdin) == NULL || terminated == 1){
 	    printf("Received EOF - exiting.\n");
 	    exit(0);
 	}
@@ -91,5 +93,5 @@ void sig_handler(int signum)
 {
     send_term_message();
     printf("Got term signal.\n");	
-    exit(1);
+    terminated = 1;
 }

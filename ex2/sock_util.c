@@ -292,4 +292,5 @@ void check_handler_setup(int result, char *msg)
 void error(char *msg)
 {
     perror(msg);
+    exit(1);
 }

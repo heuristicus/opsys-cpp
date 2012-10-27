@@ -2,7 +2,7 @@
 #include <pthread.h>
 #include <signal.h>
 
-#define MAX_THREADS 5
+#define MAX_THREADS 2
 
 struct t_struct
 {

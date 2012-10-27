@@ -237,9 +237,9 @@ void free_list(threadlist *head)
 /* Returns the length of the list.  */
 int length(threadlist* head)
 {
-    int len;
+    int len = 0;
 
-    for (len = 0; head != NULL; ++len, head = head->next);
+    for (; head != NULL; ++len, head = head->next);
     
     return len;
 }
