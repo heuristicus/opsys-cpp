@@ -277,13 +277,13 @@ int valid_string(char *str)
 		
 	// Before the colon is reached, check that characters are alphanumeric.
 	if (!isalnum(*str) && !c_flag){
-	    printf("%c is not alphanumeric\n", *str);
+	    printf("'%c' is not alphanumeric\n", *str);
 	    return 0;
 	}
 	
 	// check characters after the colon are in the valid range.
 	if (c_flag && (*str < 32 || *str > 126)){
-	    printf("%c is not in the valid range\n", *str);
+	    printf("'%c' is not in the valid range\n", *str);
 	    return 0;
 	}
     }

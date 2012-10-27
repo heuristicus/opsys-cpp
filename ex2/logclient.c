@@ -67,6 +67,7 @@ int main(int argc, char *argv[])
 	bzero(buffer, STDIN_BUFFERLENGTH);
 	//Messages that exceed the length of the stdin_bufferlength will be truncated.
 	if (fgets(buffer, STDIN_BUFFERLENGTH, stdin) == NULL || terminated == 1){
+	    send_term_message(sockfd);
 	    printf("Received EOF - exiting.\n");
 	    exit(0);
 	}
@@ -77,7 +78,8 @@ int main(int argc, char *argv[])
 	if (*(buffer + strlen(buffer) - 1) == '\n')
 	    *(buffer + strlen(buffer) - 1) = '\0';
 
-	if ((ret = send_message(buffer, sockfd)) < 0){
+	if ((ret = send_message(buffer, sockfd)) < 0 || terminated == 1){
+	    send_term_message(sockfd);
 	    printf("Terminating...\n");
 	    exit(0);
 	}
@@ -93,7 +95,6 @@ int main(int argc, char *argv[])
 
 void sig_handler(int signum)
 {
-    send_term_message();
     printf("Got term signal.\n");	
     terminated = 1;
 }

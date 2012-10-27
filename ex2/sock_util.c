@@ -18,7 +18,7 @@
 char* receive_message(int socket)
 {
     int n, remaining;
-    char *buffer = malloc(BUFFERLENGTH);
+    char *buffer = calloc(BUFFERLENGTH, sizeof(char));
     char *message;
     printf("Receiving message...\n");
     
@@ -159,7 +159,7 @@ int send_message(char *message, int socket)
 	// Put the rest of the 
 	int chars_to_write = remaining < BUFFERLENGTH ? remaining : BUFFERLENGTH;
 	
-	printf("writing %d characters\n", chars_to_write);
+	//printf("writing %d characters\n", chars_to_write);
 
 	snprintf(buffer, chars_to_write, "%s", message);
 	//printf("n is %d. Remaining bytes: %d, buffer is %s\n", n, remaining, buffer);
@@ -247,7 +247,6 @@ int do_read(int socket, char *buffer, int length, char *err_msg)
 
     if (memcmp(buffer, TERM_STRING, min(strlen(TERM_STRING), strlen(buffer))) == 0 && strlen(buffer) != 0){
 	printf("TERM MESSAGE RECEIVED\n");
-	send_term_message(socket);
 	return 0;
     }
             	
@@ -264,6 +263,10 @@ int do_write(int socket, char *buffer, int length, char *err_msg)
     n = write(socket, buffer, length);
     if (n < 0)
 	error(err_msg);
+
+    if (n == 0)
+	printf("got EOF\n");
+
 
     return n;
 }
@@ -292,5 +295,4 @@ void check_handler_setup(int result, char *msg)
 void error(char *msg)
 {
     perror(msg);
-    exit(1);
 }
