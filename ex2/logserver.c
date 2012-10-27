@@ -371,7 +371,8 @@ void shutdown_server()
     
 /* } */
 
-// Handles the SIGINT signal. Will shut down the server.
+// Handles signals. Will shut down the server on receipt. Once one signal has been received,
+// Things will break if SIGINT or SIGTERM are received again.
 void sig_handler(int signo)
 {
     if (server_running){
@@ -380,8 +381,6 @@ void sig_handler(int signo)
 	server_running = 0;
 	shutdown_server();
 	//soft_shutdown();
-    } else {
-	printf("Server is in the process of shutting down.\n");
     }
     
 }
