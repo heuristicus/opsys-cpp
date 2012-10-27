@@ -8,6 +8,7 @@ struct t_struct
 {
     int socket;
     int termreq;
+    pthread_t thread_ref;
     int terminated;
 };
 typedef struct t_struct t_struct;

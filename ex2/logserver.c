@@ -118,6 +118,7 @@ int main(int argc, char *argv[])
 	
 	
 	thread_data->socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+	thread_data->thread_ref = server_thread = malloc(sizeof(pthread_t));
 	thread_data->termreq = 0;
 	thread_data->terminated = 0;
 			
@@ -125,9 +126,7 @@ int main(int argc, char *argv[])
 	    free(thread_data);
 	    break;
 	}
-		
-	server_thread = malloc(sizeof(pthread_t));
-
+	
 	if (!server_thread)
 	    fprintf(stderr, "Failed to allocate memory for new thread.");
 
@@ -205,8 +204,6 @@ int main(int argc, char *argv[])
 	threads = add(threads, thread_data);
 	printf("Currently running threads:\n");
 	print_list(threads);
-	
-	free(server_thread);
 	
 	connections_handled++;
     }
@@ -390,6 +387,7 @@ void sig_handler(int signo)
 	printf("Total number of connections handled: %d\n", connections_handled);
 	server_running = 0;
 	shutdown_server();
+	//soft_shutdown();
     } else {
 	printf("Server is in the process of shutting down.\n");
     }

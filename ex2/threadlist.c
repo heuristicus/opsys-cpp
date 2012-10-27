@@ -145,6 +145,7 @@ static threadlist* delete_this_element(threadlist *to_delete, threadlist *previo
     threadlist* next_e = to_delete->next;
     previous->next = next_e;
     
+    free(to_delete->tdata->thread_ref);
     free(to_delete->tdata);
     free(to_delete);
     
@@ -229,6 +230,7 @@ void free_list(threadlist *head)
     while (cur != NULL){
 	prev = cur;
 	cur = cur->next;
+	free(prev->tdata->thread_ref);
 	free(prev->tdata);
 	free(prev);
     }
