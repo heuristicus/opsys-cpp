@@ -2,13 +2,16 @@
 #include <pthread.h>
 #include <signal.h>
 
-#define MAX_THREADS 2
+#ifndef _LSERV_H
+#define _LSERV_H
+
+#define MAX_THREADS 3
 
 struct t_struct
 {
     int socket;
     int termreq;
-    pthread_t thread_ref;
+    pthread_t *thread_ref;
     int terminated;
 };
 typedef struct t_struct t_struct;
@@ -40,3 +43,4 @@ int threads_active();
 void terminate_threads();
 void client_shutdown_handler(int signo);
 
+#endif

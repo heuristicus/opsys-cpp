@@ -22,7 +22,6 @@ int main(int argc, char *argv[])
     int sockfd, portno;
     t_struct *thread_data;
     struct sockaddr_in serv_addr, cli_addr;
-    pthread_t *server_thread;
     int result;
     
     printf("Starting server listening on port %s, logging to %s.\n", argv[1], argv[2]);
@@ -69,7 +68,7 @@ int main(int argc, char *argv[])
      * address to, arg 1 specifies the address to put it into, arg 2 specifies the size.
      */
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
-//	free(fp);
+	free(fp);
 	error("Error on binding");
     }
     
@@ -86,13 +85,6 @@ int main(int argc, char *argv[])
     
     check_handler_setup(sigaction(SIGINT, &handler, NULL), "Failed to set up SIGINT handler");
     check_handler_setup(sigaction(SIGTERM, &handler, NULL), "Failed to set up SIGTERM handler");
-
-    /* struct sigaction client_handler; */
-    /* client_handler.sa_handler = client_shutdown_handler; */
-    /* client_handler.sa_flags = 0; */
-    /* sigfillset(&client_handler.sa_mask); */
-
-    /* check_handler_setup(sigaction(SIGTSTP, &client_handler, NULL), "Failed to set up SIGSTP handler for client."); */
         
     /* enables the socket to accept connections - the second argument is the length of the queue. */
     listen(sockfd, 5);
@@ -100,15 +92,6 @@ int main(int argc, char *argv[])
     clilen = sizeof(cli_addr);
     
     while(1){
-	/*
-	 * accepts a connection request on the server socket.
-	 * accept (int socket, struct sockaddr *addr, socklen_t *length_ptr)
-	 * addr and length_ptr are used to return information about the 
-	 * name of the client socket.
-	 * returns a file descriptor for a new socket which is connected to the client.
-	 */
-
-	
 	// Create a struct in which to store the socket reference and a termination
 	// request flag.
 	thread_data = malloc(sizeof(t_struct));
@@ -117,40 +100,49 @@ int main(int argc, char *argv[])
 	    fprintf(stderr, "Failed to allocate memory for new thread struct.\n");
 	
 	
-	thread_data->socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-	thread_data->thread_ref = server_thread = malloc(sizeof(pthread_t));
-	thread_data->termreq = 0;
-	thread_data->terminated = 0;
-			
+	if (length(threads) == MAX_THREADS){
+	    printf("All threads are currently occupied. Waiting for one to become free.\n");
+	} else {
+	    printf("%d of %d threads are currently occupied.\n", length(threads), MAX_THREADS);
+	}
+	while (length(threads) == MAX_THREADS){ // Wait for a thread to become available.
+	    if (!server_running)
+		break;
+	    sleep(4);
+	    threads = prune_terminated_threads(threads);
+	}
+
 	if (!server_running){
 	    free(thread_data);
 	    break;
 	}
 	
-	if (!server_thread)
+	printf("Thread space available. Creating...\n");
+
+	/*
+	 * accepts a connection request on the server socket.
+	 * accept (int socket, struct sockaddr *addr, socklen_t *length_ptr)
+	 * addr and length_ptr are used to return information about the 
+	 * name of the client socket.
+	 * returns a file descriptor for a new socket which is connected to the client.
+	 */
+	thread_data->socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+	thread_data->thread_ref = malloc(sizeof(pthread_t));
+	thread_data->termreq = 0;
+	thread_data->terminated = 0;
+			
+	if (!server_running){
+	    send_term_message(thread_data->socket);
+	    close(thread_data->socket);
+	    free(thread_data->thread_ref);
+	    free(thread_data);
+	    break;
+	}
+	
+	if (!thread_data->thread_ref)
 	    fprintf(stderr, "Failed to allocate memory for new thread.");
 
 	printf("Allocated thread memory\n");
-	
-	/* printf("Threads active: %d of maximum %d", threads_active(), MAX_THREADS); */
-	/* while(threads_active() == MAX_THREADS){ */
-	/*     printf("."); */
-	/*     sleep(2); */
-	/* } */
-
-	printf("\nThread available.\n");
-
-	// If the server has been shut down, send a termination message to the 
-	// new client, free the allocated memory and break.
-	/* if (!server_running){ */
-	/*     send_term_message(); */
-	/*     close(thread_data->socket); */
-	/*     free(thread_data); */
-	/*     free(server_thread); */
-	/*     break; */
-	/* } */
-
-	printf("Client connected.\n");
 	
 	if (thread_data->socket < 0)
 	    error("ERROR on accept");
@@ -158,11 +150,6 @@ int main(int argc, char *argv[])
 	
 	pthread_attr_t pthread_attr;
 
-	if (!server_thread){
-	    fprintf(stderr, "Could not allocate memory for thread.\n");
-	    exit(1);
-	}
-	
 	printf("Successfully created handler thread.\n");
 
 	// initialises the thread object with default attributes.
@@ -178,7 +165,7 @@ int main(int argc, char *argv[])
 	 * in joinable state, thread resources are kept allocated after it terminates,
 	 * but it is possible to synchronise on the thread termination and recover
 	 * its termination code.
-	 * In this case we set the state to detached..
+	 * In this case we set the state to detached.
 	 */
 	if (pthread_attr_setdetachstate(&pthread_attr, PTHREAD_CREATE_DETACHED)){
 	    fprintf(stderr, "Setting thread attributes failed.\n");
@@ -194,7 +181,7 @@ int main(int argc, char *argv[])
 	 * The thread starts executing start_routine with arg as its only argument.
 	 */
 	printf("Starting thread...\n");
-	result = pthread_create(server_thread, &pthread_attr, logstring, (void *) thread_data);
+	result = pthread_create(thread_data->thread_ref, &pthread_attr, logstring, (void *) thread_data);
 	if (result != 0){
 	    fprintf(stderr, "Thread creation failed.\n");
 	    exit(1);
@@ -374,10 +361,15 @@ void shutdown_server()
  * ordering them to close. The server will no longer accept new connections, but 
  * will wait for all clients to disconnect.
  */
-void soft_shutdown()
-{
+/* void soft_shutdown() */
+/* { */
+/*     printf("Waiting on all clients to disconnect...\n"); */
+/*     while (length(threads) != 0) { */
+	
+/* 	threads = prune_terminated_threads(threads); */
+/*     } */
     
-}
+/* } */
 
 // Handles the SIGINT signal. Will shut down the server.
 void sig_handler(int signo)
@@ -393,9 +385,3 @@ void sig_handler(int signo)
     }
     
 }
-
-/* void client_shutdown_handler(int signo) */
-/* { */
-/*     printf("user signal\n"); */
-/*     pthread_exit(&returnValue); */
-/* } */

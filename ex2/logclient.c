@@ -65,12 +65,14 @@ int main(int argc, char *argv[])
     while(1){	
 	printf("Please enter the message.\n");
 	bzero(buffer, STDIN_BUFFERLENGTH);
-	// Messages that exceed the length of the stdin_bufferlength will be truncated.
+	//Messages that exceed the length of the stdin_bufferlength will be truncated.
 	if (fgets(buffer, STDIN_BUFFERLENGTH, stdin) == NULL || terminated == 1){
 	    printf("Received EOF - exiting.\n");
 	    exit(0);
 	}
 
+	/* sprintf(buffer, "%d: good evening.", getpid()); */
+	
 	// get rid of newline on the end of terminal-entered input
 	if (*(buffer + strlen(buffer) - 1) == '\n')
 	    *(buffer + strlen(buffer) - 1) = '\0';

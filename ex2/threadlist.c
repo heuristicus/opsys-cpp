@@ -150,7 +150,6 @@ static threadlist* delete_this_element(threadlist *to_delete, threadlist *previo
     free(to_delete);
     
     return next_e;
-    
 }
 
 
