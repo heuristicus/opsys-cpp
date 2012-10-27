@@ -6,8 +6,7 @@ int returnValue;
 pthread_mutex_t lock;
 int connections_handled = 0;
 int server_running = 1;
-t_struct *threads[MAX_THREADS];
-
+threadlist *threads;
 
 int main(int argc, char *argv[])
 {
@@ -70,7 +69,7 @@ int main(int argc, char *argv[])
      * address to, arg 1 specifies the address to put it into, arg 2 specifies the size.
      */
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
-	free(fp);
+//	free(fp);
 	error("Error on binding");
     }
     
@@ -88,12 +87,12 @@ int main(int argc, char *argv[])
     check_handler_setup(sigaction(SIGINT, &handler, NULL), "Failed to set up SIGINT handler");
     check_handler_setup(sigaction(SIGTERM, &handler, NULL), "Failed to set up SIGTERM handler");
 
-    struct sigaction client_handler;
-    client_handler.sa_handler = client_shutdown_handler;
-    client_handler.sa_flags = 0;
-    sigfillset(&client_handler.sa_mask);
+    /* struct sigaction client_handler; */
+    /* client_handler.sa_handler = client_shutdown_handler; */
+    /* client_handler.sa_flags = 0; */
+    /* sigfillset(&client_handler.sa_mask); */
 
-    check_handler_setup(sigaction(SIGTSTP, &client_handler, NULL), "Failed to set up SIGSTP handler for client.");
+    /* check_handler_setup(sigaction(SIGTSTP, &client_handler, NULL), "Failed to set up SIGSTP handler for client."); */
         
     /* enables the socket to accept connections - the second argument is the length of the queue. */
     listen(sockfd, 5);
@@ -120,7 +119,8 @@ int main(int argc, char *argv[])
 	
 	thread_data->socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 	thread_data->termreq = 0;
-		
+	thread_data->terminated = 0;
+			
 	if (!server_running){
 	    free(thread_data);
 	    break;
@@ -201,6 +201,10 @@ int main(int argc, char *argv[])
 	    exit(1);
 	}
 
+	threads = prune_terminated_threads(threads);
+	threads = add(threads, thread_data);
+	printf("Currently running threads:\n");
+	print_list(threads);
 	
 	free(server_thread);
 	
@@ -211,7 +215,7 @@ int main(int argc, char *argv[])
 }
 
 /*
- * logs a string of formal <alphanum> : <textchar> to the file specified
+ * logs a string of form <alphanum> : <textchar> to the file specified
  * when the server is started up.
  */
 void* logstring(void *args)
@@ -220,7 +224,7 @@ void* logstring(void *args)
     //char buffer[BUFFERLENGTH];
     //int n;
         
-    printf("Thread processing request.\n");
+    printf("Thread processing requests on socket %d.\n", tdata->socket);
 
     /*
      * read (int filedes, void *buffer, size_t size)
@@ -232,11 +236,11 @@ void* logstring(void *args)
 
 	
 	// If the server has asked the thread to terminate, send a termination message and
-	// break.
+	// break. Note that the client will receive the termination message on the next message
+	// it sends, not the current one.
 	if (tdata->termreq == 1){
 	    printf("Termination request received.\n");
-	    send_term_message();
-	    free(message);
+	    //send_term_message();
 	    break;
 	}
 	
@@ -259,10 +263,10 @@ void* logstring(void *args)
 	
     }
     
-    printf("Client disconnected, thread exiting.\n");
+    printf("Client disconnected, thread for socket %d exited.\n", tdata->socket);
     // close the socket and free the memory.
     close(tdata->socket);
-    free(tdata);
+    tdata->terminated = 1;
         
     // return some value as the exit status of the thread.
     returnValue = 0;
@@ -281,10 +285,12 @@ int valid_string(char *str)
 
     for (; *str != '\0'; str++){
 	if (*str == ':'){
-	    c_flag = 1;
-	    continue;
+	    if (*(str + 1) == '\0')
+		break;
+	    else
+		c_flag = 1;
 	}
-	
+		
 	// Before the colon is reached, check that characters are alphanumeric.
 	if (!isalnum(*str) && !c_flag){
 	    printf("%c is not alphanumeric\n", *str);
@@ -335,19 +341,50 @@ int write_to_file(char *str)
     return 1;
 }
 
+/*
+ * Makes a termination request to the thread with the specified socket
+ * number. If socket_number is negative, all threads will be asked to 
+ * terminate.
+ */
+void request_thread_termination(int socket_number)
+{
+    set_terminate_request(threads, socket_number);
+}
 
+
+/*
+ * Shuts the server down gracefully. Will wait for threads to finish receiving
+ * the current message from the client and then close the connection and log file.
+ */
 void shutdown_server()
 {
-    fclose(fp);
-    //terminate_threads();
+    request_thread_termination(-1);
+    printf("Waiting on threads to exit...\n");
+    while (length(threads) != 0){
+	threads = prune_terminated_threads(threads);
+	sleep(2);
+    }
+    
+    free_list(threads);
+    
+    fclose(fp); // only close the file once the threads are done.
+
     printf("Shutdown complete.\n");
+}
+
+/*
+ * Sets the server to shut down, but will wait for all threads to exit without
+ * ordering them to close. The server will no longer accept new connections, but 
+ * will wait for all clients to disconnect.
+ */
+void soft_shutdown()
+{
+    
 }
 
 // Handles the SIGINT signal. Will shut down the server.
 void sig_handler(int signo)
 {
-    
-    
     if (server_running){
 	printf("\n Received term signal - shutting down server...\n");
 	printf("Total number of connections handled: %d\n", connections_handled);
@@ -359,8 +396,8 @@ void sig_handler(int signo)
     
 }
 
-void client_shutdown_handler(int signo)
-{
-    printf("user signal\n");
-    pthread_exit(&returnValue);
-}
+/* void client_shutdown_handler(int signo) */
+/* { */
+/*     printf("user signal\n"); */
+/*     pthread_exit(&returnValue); */
+/* } */
