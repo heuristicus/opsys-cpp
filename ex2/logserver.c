@@ -1,9 +1,13 @@
 #include "logserver.h"
+#include <signal.h>
 
 FILE *fp;
 int returnValue;
 pthread_mutex_t lock;
 int connections_handled = 0;
+int server_running = 1;
+t_struct *threads[MAX_THREADS];
+
 
 int main(int argc, char *argv[])
 {
@@ -17,6 +21,7 @@ int main(int argc, char *argv[])
     
     size_t clilen;
     int sockfd, portno;
+    t_struct *thread_data;
     struct sockaddr_in serv_addr, cli_addr;
     pthread_t *server_thread;
     int result;
@@ -32,8 +37,11 @@ int main(int argc, char *argv[])
      */
     sockfd = socket(PF_INET, SOCK_STREAM, 0);
     
-    if (sockfd < 0)
+    if (sockfd < 0){
+	free(fp);
 	error("Error opening socket.");
+    }
+    
 
     printf("Socket opened successfully.\n");
     
@@ -61,18 +69,32 @@ int main(int argc, char *argv[])
      * Assign a memory address to the socket. arg 0 specifies the socket to bind an
      * address to, arg 1 specifies the address to put it into, arg 2 specifies the size.
      */
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
+	free(fp);
 	error("Error on binding");
-
+    }
+    
     printf("Socket bound successfully.\n");
 
 
     /* 
-     * Register the signal handler for SIGINT so that we can shut the server down
-     * correctly when the SIGINT signal is received.
-     */    
-    signal(SIGINT, sig_handler);
+     * Register the signal handler.
+     */
+    struct sigaction handler;
+    handler.sa_handler = sig_handler;
+    handler.sa_flags = 0;
+    sigfillset(&handler.sa_mask);
     
+    check_handler_setup(sigaction(SIGINT, &handler, NULL), "Failed to set up SIGINT handler");
+    check_handler_setup(sigaction(SIGTERM, &handler, NULL), "Failed to set up SIGTERM handler");
+
+    struct sigaction client_handler;
+    client_handler.sa_handler = client_shutdown_handler;
+    client_handler.sa_flags = 0;
+    sigfillset(&client_handler.sa_mask);
+
+    check_handler_setup(sigaction(SIGTSTP, &client_handler, NULL), "Failed to set up SIGSTP handler for client.");
+        
     /* enables the socket to accept connections - the second argument is the length of the queue. */
     listen(sockfd, 5);
     printf("Listening for connections...\n");
@@ -86,20 +108,57 @@ int main(int argc, char *argv[])
 	 * name of the client socket.
 	 * returns a file descriptor for a new socket which is connected to the client.
 	 */
-	int *newsockfd = malloc(sizeof(int));
-	if (!newsockfd)
-	    fprintf(stderr, "Failed to allocate memory for a new socket.\n");
+
 	
-	*newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+	// Create a struct in which to store the socket reference and a termination
+	// request flag.
+	thread_data = malloc(sizeof(t_struct));
+			    
+	if (!thread_data)
+	    fprintf(stderr, "Failed to allocate memory for new thread struct.\n");
 	
+	
+	thread_data->socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+	thread_data->termreq = 0;
+		
+	if (!server_running){
+	    free(thread_data);
+	    break;
+	}
+		
+	server_thread = malloc(sizeof(pthread_t));
+
+	if (!server_thread)
+	    fprintf(stderr, "Failed to allocate memory for new thread.");
+
+	printf("Allocated thread memory\n");
+	
+	/* printf("Threads active: %d of maximum %d", threads_active(), MAX_THREADS); */
+	/* while(threads_active() == MAX_THREADS){ */
+	/*     printf("."); */
+	/*     sleep(2); */
+	/* } */
+
+	printf("\nThread available.\n");
+
+	// If the server has been shut down, send a termination message to the 
+	// new client, free the allocated memory and break.
+	/* if (!server_running){ */
+	/*     send_term_message(); */
+	/*     close(thread_data->socket); */
+	/*     free(thread_data); */
+	/*     free(server_thread); */
+	/*     break; */
+	/* } */
+
 	printf("Client connected.\n");
 	
-	if (*newsockfd < 0)
+	if (thread_data->socket < 0)
 	    error("ERROR on accept");
 
-	server_thread = malloc(sizeof(pthread_t));
-	pthread_attr_t pthread_attr;
 	
+	pthread_attr_t pthread_attr;
+
 	if (!server_thread){
 	    fprintf(stderr, "Could not allocate memory for thread.\n");
 	    exit(1);
@@ -129,18 +188,20 @@ int main(int argc, char *argv[])
 
 	printf("Set thread state.\n");
 
-	/*
+	/*n
 	 * int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void*), void *arg);
 	 * creates a new thread with the attributes specified in attr. Modifying the values of attr later
 	 * will not affect thread behaviour. On successful creation, the ID of the thread is returned.
 	 * The thread starts executing start_routine with arg as its only argument.
 	 */
 	printf("Starting thread...\n");
-	result = pthread_create(server_thread, &pthread_attr, logstring, (void *) newsockfd);
+	result = pthread_create(server_thread, &pthread_attr, logstring, (void *) thread_data);
 	if (result != 0){
 	    fprintf(stderr, "Thread creation failed.\n");
 	    exit(1);
 	}
+
+	
 	free(server_thread);
 	
 	connections_handled++;
@@ -155,7 +216,7 @@ int main(int argc, char *argv[])
  */
 void* logstring(void *args)
 {
-    int *newsockfd = (int *) args;
+    t_struct *tdata = (t_struct*) args;
     //char buffer[BUFFERLENGTH];
     //int n;
         
@@ -166,15 +227,26 @@ void* logstring(void *args)
      * reads up to size bytes from the file with descriptor filedes into buffer.
      * returns the number of bytes actually read. zero return indicates EOF.
      */
-    char *message;
+    char *message = NULL;
     while(1){
-	message = receive_message(*newsockfd);
+
+	
+	// If the server has asked the thread to terminate, send a termination message and
+	// break.
+	if (tdata->termreq == 1){
+	    printf("Termination request received.\n");
+	    send_term_message();
+	    free(message);
+	    break;
+	}
+	
+	message = receive_message(tdata->socket);
 	if (strcmp(message, "EOF") == 0){
 	    break;
 	}
 
 	int v = valid_string(message);
-	send_message_valid(v, *newsockfd);
+	send_message_valid(v, tdata->socket);
 
 	printf("Message %s was %s.\n", message, v == 0 ? "invalid" : "valid");
 
@@ -189,13 +261,15 @@ void* logstring(void *args)
     
     printf("Client disconnected, thread exiting.\n");
     // close the socket and free the memory.
-    close(*newsockfd);
-    free(newsockfd);
+    close(tdata->socket);
+    free(tdata);
         
     // return some value as the exit status of the thread.
     returnValue = 0;
     pthread_exit(&returnValue);
 }
+
+
 
 /*
  * Checks whether the given string is a valid log string. Returns 1 if true, and 
@@ -208,7 +282,7 @@ int valid_string(char *str)
     for (; *str != '\0'; str++){
 	if (*str == ':'){
 	    c_flag = 1;
-	    
+	    continue;
 	}
 	
 	// Before the colon is reached, check that characters are alphanumeric.
@@ -239,12 +313,6 @@ void open_log_file(char *filename)
     }
 }
 
-// Closes the log file. Should only be done when the server shuts down.
-void close_log_file()
-{
-    fclose(fp);
-}
-
 /*
  * Writes a character string to the globally specified file, which should already be open.
  * If the write fails for whatever reason, 0 is returned. Otherwise, 1 is returned.
@@ -267,16 +335,32 @@ int write_to_file(char *str)
     return 1;
 }
 
+
+void shutdown_server()
+{
+    fclose(fp);
+    //terminate_threads();
+    printf("Shutdown complete.\n");
+}
+
 // Handles the SIGINT signal. Will shut down the server.
 void sig_handler(int signo)
 {
-    printf("\nSIGINT received - shutting down server...\n");
-    printf("Total number of connections handled: %d\n", connections_handled);
-    if (signo == SIGINT){
-	close_log_file();
-	printf("Log file closed.\n");
-	
-	printf("Shutdown complete. Exiting.\n");
-	exit(0);
+    
+    
+    if (server_running){
+	printf("\n Received term signal - shutting down server...\n");
+	printf("Total number of connections handled: %d\n", connections_handled);
+	server_running = 0;
+	shutdown_server();
+    } else {
+	printf("Server is in the process of shutting down.\n");
     }
+    
+}
+
+void client_shutdown_handler(int signo)
+{
+    printf("user signal\n");
+    pthread_exit(&returnValue);
 }

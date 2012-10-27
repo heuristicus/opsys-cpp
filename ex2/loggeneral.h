@@ -11,9 +11,6 @@
 #define BUFFERLENGTH 31
 #define STDIN_BUFFERLENGTH 512
 
-// util.c
-void error(char *msg);
-
 // sock_util.c
 char* receive_message(int socket);
 int send_message(char *message, int socket);
@@ -21,3 +18,10 @@ int do_write(int socket, char *buffer, int length, char *err_msg);
 int do_read(int socket, char *buffer, int length, char *err_msg);
 void send_message_valid(int message, int socket);
 int receive_message_valid(int socket);
+int min(int, int);
+void check_handler_setup(int result, char *msg);
+void send_term_message();
+void error(char *msg);
+
+
+

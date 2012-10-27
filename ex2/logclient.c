@@ -1,5 +1,7 @@
 #include "logclient.h"
+#include "loggeneral.h"
 
+#include <signal.h>
 #include <time.h>
 
 int main(int argc, char *argv[])
@@ -46,8 +48,19 @@ int main(int argc, char *argv[])
      * initiates a connection from socket to the socket whose address is specified by
      * the addr and length arguments.
      */
+
+    struct sigaction handler;
+    handler.sa_handler = sig_handler;
+    handler.sa_flags = 0;
+    sigfillset(&handler.sa_mask);
+    
+    check_handler_setup(sigaction(SIGINT, &handler, NULL), "Failed to set up SIGINT handler");
+
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	error("Error connecting");
+    int valid = 0;
+    int ret;
+        
     while(1){	
 	printf("Please enter the message.\n");
 	bzero(buffer, STDIN_BUFFERLENGTH);
@@ -57,15 +70,26 @@ int main(int argc, char *argv[])
 	}
 
 	// get rid of newline on the end of terminal-entered input
-	    if (*(buffer + strlen(buffer) - 1) == '\n')
-		*(buffer + strlen(buffer) - 1) = '\0';
+	if (*(buffer + strlen(buffer) - 1) == '\n')
+	    *(buffer + strlen(buffer) - 1) = '\0';
 
-	    send_message(buffer, sockfd);
+	if ((ret = send_message(buffer, sockfd)) < 0){
+	    printf("Terminating...\n");
+	    exit(0);
+	}
 	
-	    int valid = receive_message_valid(sockfd);
-	    printf("Message %s was %s.\n", buffer, valid == 0 ? "invalid" : "valid");
-	    printf("\n");
+	valid = receive_message_valid(sockfd);
+		
+	printf("Message %s was %s.\n", buffer, valid == 0 ? "invalid" : "valid");
+	printf("\n");
     }
     
     return 0;
+}
+
+void sig_handler(int signum)
+{
+    send_term_message();
+    printf("Got term signal.\n");	
+    exit(1);
 }

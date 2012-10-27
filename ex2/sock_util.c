@@ -1,5 +1,8 @@
 #include "loggeneral.h"
 #include <pthread.h>
+#include <signal.h>
+
+#define TERM_STRING "!\"£$term$£\"!"
 /*
  * reads a message of any length from socket. Returns the whole message in a single string.
  * The protocol followed is as follows: 
@@ -24,6 +27,7 @@ char* receive_message(int socket)
 		"ERROR: Did not receive message length");
 
     if (n == 0 || atoi(buffer) == EOF){
+	free(buffer);
 	return "EOF";
     }
 
@@ -44,6 +48,13 @@ char* receive_message(int socket)
     
     n = do_read(socket, buffer, BUFFERLENGTH, \
 		"ERROR: Could not read initial part of message");
+
+    if (n == 0 || atoi(buffer) == EOF){
+	free(buffer);
+	free(message);
+	return "EOF";
+    }
+
     if (remaining > BUFFERLENGTH)
 	remaining -= n - 1;
     else
@@ -59,6 +70,13 @@ char* receive_message(int socket)
 	//printf("Reading remaining %d bytes.\n", remaining);
 	n = do_read(socket, buffer, BUFFERLENGTH, \
 		"ERROR: Could not read initial part of message");
+	
+	if (n == 0 || atoi(buffer) == EOF){
+	    free(message);
+	    free(buffer);
+	    return "EOF";
+	}
+
 	//printf("Received %d bytes. Buffer is %s\n", n, buffer);
 	strcpy(message + strlen(message), buffer);
 	//printf("copied received into message: %s\n", message);
@@ -108,6 +126,10 @@ int send_message(char *message, int socket)
     n = do_read(socket, buffer, BUFFERLENGTH, \
 		"ERROR: Could not read ack message");
 
+    if (n < 1){
+	return -1;
+    }
+
     //printf("Got %d bytes, message %s\n", n, buffer);
 
     /*
@@ -155,7 +177,11 @@ int send_message(char *message, int socket)
     
     n = do_read(socket, buffer, BUFFERLENGTH, \
 		"ERROR: Could not read transfer complete ack.");
-    
+
+    if (n < 1){
+	return -1;
+    }
+
     int serv_rec = atoi(buffer);
 
     assert(serv_rec == 0);
@@ -179,7 +205,9 @@ void send_message_valid(int message, int socket)
 	     "ERROR: Could not send validation message.");
     
     printf("Validation message sent successfully.\n");
-    
+
+    free(v);
+        
 }
 
 /*
@@ -190,17 +218,20 @@ int receive_message_valid(int socket)
 {
     printf("Receiving validation message...\n");
     
-    char* v = malloc(2);
-    
+    char v[2] = "";
+        
     do_read(socket, v, 2, \
 	    "ERROR: Could not read validation message.");
     
+    printf("v is %s\n", v);
+
     return atoi(v);
 }
 
 /*
  * Helper method for reading from a socket.
  * Will exit the program with the given error message if something fails.
+ * If a termination message is received the thread will also exit.
  */
 int do_read(int socket, char *buffer, int length, char *err_msg)
 {
@@ -211,8 +242,13 @@ int do_read(int socket, char *buffer, int length, char *err_msg)
 
     if (n == 0){
 	printf("Received EOF. Exiting.\n");
-	free(buffer);
-	pthread_exit(0);
+	return n;
+    }
+
+    if (memcmp(buffer, TERM_STRING, min(strlen(TERM_STRING), strlen(buffer))) == 0 && strlen(buffer) != 0){
+	printf("TERM MESSAGE RECEIVED\n");
+	send_term_message(socket);
+	return 0;
     }
             	
     return n;
@@ -230,4 +266,30 @@ int do_write(int socket, char *buffer, int length, char *err_msg)
 	error(err_msg);
 
     return n;
+}
+
+// Sends a termination message to the specified socket.
+void send_term_message(int socket)
+{
+    write(socket, TERM_STRING, strlen(TERM_STRING));
+}
+
+
+// Returns the smaller of two integers
+int min(int x, int y)
+{
+    return x < y ? x : y;
+}
+
+// Checks whether a signal handler has been set up correctly.
+void check_handler_setup(int result, char *msg)
+{
+    if (result != 0)
+	error(msg);
+}
+
+// Prints an error message.
+void error(char *msg)
+{
+    perror(msg);
 }
