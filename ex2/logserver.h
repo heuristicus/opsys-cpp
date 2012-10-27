@@ -8,6 +8,7 @@ struct t_struct
 {
     int socket;
     int termreq;
+    int terminated;
 };
 typedef struct t_struct t_struct;
 
@@ -24,7 +25,8 @@ threadlist* delete(threadlist *head, int socket_number);
 void print_list(threadlist *head);
 void free_list(threadlist *head);
 int length(threadlist *head);
-
+threadlist* prune_terminated_threads(threadlist *head);
+int set_terminate_request(threadlist *head, int socket_number);
 
 void* logstring(void *args);
 int valid_string(char *str);
