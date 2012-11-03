@@ -4,16 +4,19 @@ LIBS=-lnetfilter_queue
 
 all: netqueue ratelimit
 
-ratelimit: ratelimit.o
-	$(CC) $< $(LIBS) -o $@
+ratelimit: ratelimit.o util.o
+	$(CC) $< util.o $(LIBS) -o $@
 
-ratelimit.o: ratelimit.c
+ratelimit.o: ratelimit.c limiter.h
 	$(CC) -c $<
 
-netqueue: netqueue.o
-	$(CC) $< $(LIBS) -o $@
+netqueue: netqueue.o util.o
+	$(CC) $< util.o $(LIBS) -o $@
 
-netqueue.o: netqueue.c
+netqueue.o: netqueue.c limiter.h
+	$(CC) -c $<
+
+util.o: util.c limiter.h
 	$(CC) -c $<
 
 clean:
