@@ -11,8 +11,9 @@ struct nfq_handle *h;
 struct nfq_q_handle *qh;
 struct itimerval timer;
 
-int conn_num;
+int conn_num = 0;
 pthread_mutex_t lock;
+int *threshold;
 
 int main(int argc, char *argv[])
 {
@@ -21,7 +22,10 @@ int main(int argc, char *argv[])
 	printf("%s: You must be root to run this program.\n", argv[0]);
 	exit(1);
     }
-    
+
+    int t = atoi(argv[2]);
+    threshold = &t;
+            
     struct sigaction handler;
     handler.sa_handler = sig_handler;
     handler.sa_flags = 0;
@@ -50,7 +54,7 @@ int main(int argc, char *argv[])
     }
 
     // Run the packet handler in a thread so that we can handle timer interrupts.
-    int result = pthread_create(thread, &pthread_attr, handle_packets, NULL);
+    int result = pthread_create(thread, &pthread_attr, handle_packets, (void*) threshold);
     if (result != 0){
 	fprintf(stderr, "Thread creation failed.\n");
 	exit(1);
@@ -61,11 +65,53 @@ int main(int argc, char *argv[])
 	// so that we can handle the timer interrupts.
 	sleep(1); 
     }
-    
+
     return 0;
 }
 
+/*
+ * Handles packets. A timer is started to monitor the number of connection
+ * attempts per second. Each time a packet is received, a shared variable
+ * is incremented, and each time the timer ticks this value is reset. If 
+ * the number of connections received exceeds a threshold value, we wait for
+ * a time before accepting connections again. i.e. if the threshold is exceeded,
+ * all packets will be dropped for a certain time.
+ */
+static void* handle_packets(void *data)
+{
+    /*
+     * The aligned attribute forces the compiler to ensure that
+     * the buf array is aligned to a specific byte boundary. In the
+     * case where no argument is provided to ((aligned)), the compiler
+     * chooses the best option, but in the case of ((aligned (8))), the
+     * start of the memory block will be an address 0x?????8 (i guess?)
+     */
+    char buf[4096] __attribute__ ((aligned));
+    int rv;
+    
+    int fd = nfq_fd(h);
 
+
+    setup_timer(); // start the timer which resets the attempt count
+    
+    /*
+     * ssize_t recv(int sockfd, void *buf, size_t len, int flags);
+     * 
+     * Receives a message from the specified socket. Will wait for
+     * a message to arrive unless the socket is nonblocking.
+     */
+    while ((rv = recv(fd, buf, sizeof(buf), 0)) && rv >= 0) {
+    	/*
+    	 * Handles a packet received from the nfqueue subsystem.
+    	 * The data in buf is passed to the callback, and rv is the
+    	 * length of the data received.
+    	 */
+    	nfq_handle_packet(h, buf, rv);
+	
+    }
+
+    return 0;
+}
 	
 /*
  * Called whenever a packet is received by the socket.
@@ -95,10 +141,20 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
     conn_num++;
 
     pthread_mutex_unlock(&lock);
-            
-    return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+
+    if (conn_num > *threshold){
+	return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+    } else {
+	return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
+    }
+    
 }
 
+/*
+ * Set up the queue handler that we will bind the queue to, and then
+ * bind the queue to it. Once we have bound the queue, set up an
+ * exit handler so that the queue is destroyed correctly.
+ */
 static void setup_queue()
 {
     /*
@@ -170,41 +226,6 @@ static void setup_queue()
 
 }
 
-static void* handle_packets(void *data)
-{
-    /*
-     * The aligned attribute forces the compiler to ensure that
-     * the buf array is aligned to a specific byte boundary. In the
-     * case where no argument is provided to ((aligned)), the compiler
-     * chooses the best option, but in the case of ((aligned (8))), the
-     * start of the memory block will be an address 0x?????8 (i guess?)
-     */
-    char buf[4096] __attribute__ ((aligned));
-    int rv;
-    
-    int fd = nfq_fd(h);
-
-
-    setup_timer(); // start the timer which resets the attempt count
-    
-    /*
-     * ssize_t recv(int sockfd, void *buf, size_t len, int flags);
-     * 
-     * Receives a message from the specified socket. Will wait for
-     * a message to arrive unless the socket is nonblocking.
-     */
-    while ((rv = recv(fd, buf, sizeof(buf), 0)) && rv >= 0) {
-    	/*
-    	 * Handles a packet received from the nfqueue subsystem.
-    	 * The data in buf is passed to the callback, and rv is the
-    	 * length of the data received.
-    	 */
-    	nfq_handle_packet(h, buf, rv);
-    }
-
-    return 0;
-}
-
 /*
  * Destroys the queue that we created to handle packets.
  */
@@ -233,6 +254,10 @@ static void unbind_queue()
     sigprocmask(SIG_UNBLOCK, &sigset, NULL);
 }
 
+/*
+ * Sets up a timer which we use to trigger an interrupt which resets
+ * the connection attempt count.
+ */
 static void setup_timer()
 {
     struct sigaction alrm;
@@ -251,6 +276,10 @@ static void setup_timer()
         
 }
 
+/*
+ * Handler for the timer. Resets the shared variable containing connection
+ * attempt count.
+ */
 static void alrm_handler(int signum)
 {
     printf("Handled %d connections in the last second.\n", conn_num);
@@ -264,11 +293,17 @@ static void alrm_handler(int signum)
     
 }
 
-
+/*
+ * Handles sigterm iterrupts. The rate limiter will send SIGTERM when it
+ * receives a SIGINT or somesuch interrupt.
+ */
 static void sig_handler(int signum)
 {
     if (signum == SIGTERM){
 	printf("netqueue:got SIGTERM \n");
 	exit(1);
+    } else {
+	perror("Error.");
     }
+    
 }
