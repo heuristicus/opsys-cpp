@@ -7,7 +7,6 @@ static void unbind_queue();
 
 struct nfq_handle *h;
 struct nfq_q_handle *qh;
-char* buffer;
 
 int main(int argc, char *argv[])
 {
@@ -107,6 +106,8 @@ static u_int32_t get_pkt_id(struct nfq_data *tb)
 
 static unsigned short get_src_port(struct nfq_data *nfa) 
 {
+    char* buffer;
+        
     nfq_get_payload(nfa, &buffer);
     
     return *((unsigned short*) (buffer + 22));
@@ -114,6 +115,8 @@ static unsigned short get_src_port(struct nfq_data *nfa)
 
 static unsigned short get_dest_port(struct nfq_data *nfa)
 {
+    char *buffer;
+        
     nfq_get_payload(nfa, &buffer);
 
     return  *((unsigned short*) (buffer + 20));
@@ -281,6 +284,5 @@ static void unbind_queue()
 static void sig_handler(int signum)
 {
     printf("netqueue:got SIGTERM \n");
-    free(buffer);
     exit(1);
 }
