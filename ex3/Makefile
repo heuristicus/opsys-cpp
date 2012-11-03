@@ -1,6 +1,6 @@
 CFLAGS=-Wall -Werror -g -D _GNU_SOURCE
 CC=gcc $(CFLAGS)
-LIBS=-lnetfilter_queue
+LIBS=-lnetfilter_queue -lpthread
 
 all: netqueue ratelimit
 
@@ -20,4 +20,4 @@ util.o: util.c limiter.h
 	$(CC) -c $<
 
 clean:
-	rm -f *.o netqueue
+	rm -f *.o netqueue ratelimit

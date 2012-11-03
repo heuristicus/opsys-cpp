@@ -2,11 +2,17 @@
 
 static void sig_handler(int signum);
 static void setup_queue();
-static void handle_packets();
+static void* handle_packets();
 static void unbind_queue();
+static void setup_timer();
+static void alrm_handler(int signum);
 
 struct nfq_handle *h;
 struct nfq_q_handle *qh;
+struct itimerval timer;
+
+int conn_num;
+pthread_mutex_t lock;
 
 int main(int argc, char *argv[])
 {
@@ -20,6 +26,7 @@ int main(int argc, char *argv[])
     handler.sa_handler = sig_handler;
     handler.sa_flags = 0;
     sigfillset(&handler.sa_mask);
+    
     check(sigaction(SIGTERM, &handler, NULL), "Failed to assign handler to SIGTERM");
     //sigaction(SIGINT, &handler, NULL);
     
@@ -28,99 +35,34 @@ int main(int argc, char *argv[])
     signal(SIGINT, SIG_IGN);
 
     setup_queue();
-    handle_packets();
-        
+
+    pthread_t *thread = malloc(sizeof(pthread_t));
+    pthread_attr_t pthread_attr;
+
+    if (pthread_attr_init(&pthread_attr)){
+	fprintf(stderr, "Creation of thread attributes failed.\n");
+	exit(1);
+    }
+
+    if (pthread_attr_setdetachstate(&pthread_attr, PTHREAD_CREATE_DETACHED)){
+	fprintf(stderr, "Setting thread attributes failed.\n");
+	exit(1);
+    }
+
+    int result = pthread_create(thread, &pthread_attr, handle_packets, NULL);
+    if (result != 0){
+	fprintf(stderr, "Thread creation failed.\n");
+	exit(1);
+    }
+
+    while(1){
+	sleep(1); // non-busy wait. Keep the program running while the thread runs.
+    }
+    
     return 0;
 }
 
-static void print_pkt (struct nfq_data *tb)
-{
 
-    int id = 0;
-    struct nfqnl_msg_packet_hdr *ph;
-    struct nfqnl_msg_packet_hw *hwph;
-    u_int32_t mark,ifi; 
-    int ret;
-    char *data;
- 
-    ph = nfq_get_msg_packet_hdr(tb);
-    if (ph) {
-	id = ntohl(ph->packet_id);
-	printf("hw_protocol=0x%04x hook=%u id=%u ",
-	       ntohs(ph->hw_protocol), ph->hook, id);
-    }
-
-    hwph = nfq_get_packet_hw(tb);
-    if (hwph) {
-	int i, hlen = ntohs(hwph->hw_addrlen);
-
-	printf("hw_src_addr=");
-	for (i = 0; i < hlen-1; i++)
-	    printf("%02x:", hwph->hw_addr[i]);
-	printf("%02x ", hwph->hw_addr[hlen-1]);
-    }
-
-    mark = nfq_get_nfmark(tb);
-    if (mark)
-	printf("mark=%u ", mark);
-
-    ifi = nfq_get_indev(tb);
-    if (ifi)
-	printf("indev=%u ", ifi);
-
-    ifi = nfq_get_outdev(tb);
-    if (ifi)
-	printf("outdev=%u ", ifi);
-    ifi = nfq_get_physindev(tb);
-    if (ifi)
-	printf("physindev=%u ", ifi);
-
-    ifi = nfq_get_physoutdev(tb);
-    if (ifi)
-	printf("physoutdev=%u ", ifi);
-
-    ret = nfq_get_payload(tb, &data);
-    if (ret >= 0)
-	printf("payload_len=%d ", ret);
-
-    fputc('\n', stdout);
-
-}
-
-static u_int32_t get_pkt_id(struct nfq_data *tb)
-{
-    int id = 0;
-    struct nfqnl_msg_packet_hdr *ph;
- 
-    ph = nfq_get_msg_packet_hdr(tb);
-    
-    if (ph) {
-	id = ntohl(ph->packet_id);
-	printf("hw_protocol=0x%04x hook=%u id=%u ",
-	       ntohs(ph->hw_protocol), ph->hook, id);
-    }
-
-    return id;
-    
-}
-
-static unsigned short get_src_port(struct nfq_data *nfa) 
-{
-    char* buffer;
-        
-    nfq_get_payload(nfa, &buffer);
-    
-    return *((unsigned short*) (buffer + 22));
-}
-
-static unsigned short get_dest_port(struct nfq_data *nfa)
-{
-    char *buffer;
-        
-    nfq_get_payload(nfa, &buffer);
-
-    return  *((unsigned short*) (buffer + 20));
-}
 	
 /*
  * Called whenever a packet is received by the socket.
@@ -140,12 +82,14 @@ static unsigned short get_dest_port(struct nfq_data *nfa)
 static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 	      struct nfq_data *nfa, void *data)
 {
-    print_pkt(nfa);
+
     u_int32_t id = get_pkt_id(nfa);
 
-    printf("Received packet from port %d, destined for port %d\n", get_src_port(nfa), get_dest_port(nfa));
+    //printf("Received packet from port %d, destined for port %d\n", get_src_port(nfa), get_dest_port(nfa));
 
-    return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
+    conn_num++;
+        
+    return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
 }
 
 static void setup_queue()
@@ -219,7 +163,7 @@ static void setup_queue()
 
 }
 
-static void handle_packets()
+static void* handle_packets(void *data)
 {
     /*
      * The aligned attribute forces the compiler to ensure that
@@ -233,6 +177,9 @@ static void handle_packets()
     
     int fd = nfq_fd(h);
 
+
+    setup_timer(); // start the timer which resets the attempt count
+    
     /*
      * ssize_t recv(int sockfd, void *buf, size_t len, int flags);
      * 
@@ -240,15 +187,15 @@ static void handle_packets()
      * a message to arrive unless the socket is nonblocking.
      */
     while ((rv = recv(fd, buf, sizeof(buf), 0)) && rv >= 0) {
-	printf("pkt received\n");
-	/*
-	 * Handles a packet received from the nfqueue subsystem.
-	 * The data in buf is passed to the callback, and rv is the
-	 * length of the data received.
-	 */
-	nfq_handle_packet(h, buf, rv);
+    	/*
+    	 * Handles a packet received from the nfqueue subsystem.
+    	 * The data in buf is passed to the callback, and rv is the
+    	 * length of the data received.
+    	 */
+    	nfq_handle_packet(h, buf, rv);
     }
 
+    return 0;
 }
 
 /*
@@ -279,10 +226,38 @@ static void unbind_queue()
     sigprocmask(SIG_UNBLOCK, &sigset, NULL);
 }
 
+static void setup_timer()
+{
+    struct sigaction alrm;
+    alrm.sa_handler = alrm_handler;
+    alrm.sa_flags = 0;
+    sigfillset(&alrm.sa_mask);
+    
+    check(sigaction(SIGALRM, &alrm, NULL), "Failed to set up alarm signal handler");
+        
+    timer.it_value.tv_sec = 1;
+    timer.it_value.tv_usec = 0;
+    
+    timer.it_interval = timer.it_value;
+
+    check(setitimer(ITIMER_REAL, &timer, NULL), "Failed to set up timer.");
+        
+}
+
+static void alrm_handler(int signum)
+{
+    printf("Handled %d connections in the last second.\n", conn_num);
+
+    conn_num = 0;
+}
 
 
 static void sig_handler(int signum)
 {
-    printf("netqueue:got SIGTERM \n");
-    exit(1);
+    if (signum == SIGTERM){
+	printf("netqueue:got SIGTERM \n");
+	exit(1);
+    } else if (signum == SIGALRM){
+	printf("ALARM\n");
+    }
 }

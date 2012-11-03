@@ -33,7 +33,10 @@ int main(int argc, char *argv[])
     check(sigaction(SIGTERM, &handler, NULL), "Could not bind SIGTERM action handler.");
     
     char *netq_args[4] = {"netqueue", argv[1], argv[2], NULL};
+
+    //system("iptables -n -L -v");
     
+
     if ((q_pid = fork()) < 0){
 	perror("Something went wrong when attempting to fork.");
 	exit(1);
@@ -60,9 +63,11 @@ static void sig_handler(int signum)
 {
     int status;
     
-    printf("ratelimit: SIGINT received. Killing queue handler.\n");
+    printf("ratelimit: %s received. Killing queue handler.\n", strsignal(signum));
     kill(q_pid, 15); // Send SIGTERM to the child
     q_pid = wait(&status); // Wait for the child to exit
     printf("Child process %d exited with status %d\n", q_pid, status);
+    printf("Resetting iptables\n");
+    //system("iptables -n -L -v");
     printf("Parent exiting.\n");
 }
