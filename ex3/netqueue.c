@@ -49,6 +49,7 @@ int main(int argc, char *argv[])
 	exit(1);
     }
 
+    // Run the packet handler in a thread so that we can handle timer interrupts.
     int result = pthread_create(thread, &pthread_attr, handle_packets, NULL);
     if (result != 0){
 	fprintf(stderr, "Thread creation failed.\n");
@@ -56,7 +57,9 @@ int main(int argc, char *argv[])
     }
 
     while(1){
-	sleep(1); // non-busy wait. Keep the program running while the thread runs.
+	// non-busy wait. Keep the program running while the thread runs.
+	// so that we can handle the timer interrupts.
+	sleep(1); 
     }
     
     return 0;
@@ -87,8 +90,12 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 
     //printf("Received packet from port %d, destined for port %d\n", get_src_port(nfa), get_dest_port(nfa));
 
+    pthread_mutex_lock(&lock);
+    
     conn_num++;
-        
+
+    pthread_mutex_unlock(&lock);
+            
     return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
 }
 
@@ -248,7 +255,13 @@ static void alrm_handler(int signum)
 {
     printf("Handled %d connections in the last second.\n", conn_num);
 
+    
+    pthread_mutex_lock(&lock);
+    
     conn_num = 0;
+    
+    pthread_mutex_unlock(&lock);
+    
 }
 
 
@@ -257,7 +270,5 @@ static void sig_handler(int signum)
     if (signum == SIGTERM){
 	printf("netqueue:got SIGTERM \n");
 	exit(1);
-    } else if (signum == SIGALRM){
-	printf("ALARM\n");
     }
 }
