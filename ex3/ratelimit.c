@@ -47,7 +47,8 @@ int main(int argc, char *argv[])
     if (q_pid > 0){
 	printf("Spawned child process with pid %d\n", q_pid);
 	int status;
-	q_pid = wait(&status);
+	// Wait while the child runs.
+	q_pid = wait(&status); 
     }
     
 
@@ -60,8 +61,8 @@ static void sig_handler(int signum)
     int status;
     
     printf("ratelimit: SIGINT received. Killing queue handler.\n");
-    kill(q_pid, 15);
-    q_pid = wait(&status);
+    kill(q_pid, 15); // Send SIGTERM to the child
+    q_pid = wait(&status); // Wait for the child to exit
     printf("Child process %d exited with status %d\n", q_pid, status);
     printf("Parent exiting.\n");
 }

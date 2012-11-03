@@ -7,6 +7,7 @@ static void unbind_queue();
 
 struct nfq_handle *h;
 struct nfq_q_handle *qh;
+char* buffer;
 
 int main(int argc, char *argv[])
 {
@@ -27,66 +28,95 @@ int main(int argc, char *argv[])
     // and send us a sigterm if we should terminate.
     signal(SIGINT, SIG_IGN);
 
-
     setup_queue();
     handle_packets();
         
     return 0;
 }
 
-/* returns packet id */
-static u_int32_t print_pkt (struct nfq_data *tb)
+static void print_pkt (struct nfq_data *tb)
 {
-	int id = 0;
-	struct nfqnl_msg_packet_hdr *ph;
-	struct nfqnl_msg_packet_hw *hwph;
-	u_int32_t mark,ifi; 
-	int ret;
-	char *data;
 
-	ph = nfq_get_msg_packet_hdr(tb);
-	if (ph) {
-		id = ntohl(ph->packet_id);
-		printf("hw_protocol=0x%04x hook=%u id=%u ",
-			ntohs(ph->hw_protocol), ph->hook, id);
-	}
+    int id = 0;
+    struct nfqnl_msg_packet_hdr *ph;
+    struct nfqnl_msg_packet_hw *hwph;
+    u_int32_t mark,ifi; 
+    int ret;
+    char *data;
+ 
+    ph = nfq_get_msg_packet_hdr(tb);
+    if (ph) {
+	id = ntohl(ph->packet_id);
+	printf("hw_protocol=0x%04x hook=%u id=%u ",
+	       ntohs(ph->hw_protocol), ph->hook, id);
+    }
 
-	hwph = nfq_get_packet_hw(tb);
-	if (hwph) {
-		int i, hlen = ntohs(hwph->hw_addrlen);
+    hwph = nfq_get_packet_hw(tb);
+    if (hwph) {
+	int i, hlen = ntohs(hwph->hw_addrlen);
 
-		printf("hw_src_addr=");
-		for (i = 0; i < hlen-1; i++)
-			printf("%02x:", hwph->hw_addr[i]);
-		printf("%02x ", hwph->hw_addr[hlen-1]);
-	}
+	printf("hw_src_addr=");
+	for (i = 0; i < hlen-1; i++)
+	    printf("%02x:", hwph->hw_addr[i]);
+	printf("%02x ", hwph->hw_addr[hlen-1]);
+    }
 
-	mark = nfq_get_nfmark(tb);
-	if (mark)
-		printf("mark=%u ", mark);
+    mark = nfq_get_nfmark(tb);
+    if (mark)
+	printf("mark=%u ", mark);
 
-	ifi = nfq_get_indev(tb);
-	if (ifi)
-		printf("indev=%u ", ifi);
+    ifi = nfq_get_indev(tb);
+    if (ifi)
+	printf("indev=%u ", ifi);
 
-	ifi = nfq_get_outdev(tb);
-	if (ifi)
-		printf("outdev=%u ", ifi);
-	ifi = nfq_get_physindev(tb);
-	if (ifi)
-		printf("physindev=%u ", ifi);
+    ifi = nfq_get_outdev(tb);
+    if (ifi)
+	printf("outdev=%u ", ifi);
+    ifi = nfq_get_physindev(tb);
+    if (ifi)
+	printf("physindev=%u ", ifi);
 
-	ifi = nfq_get_physoutdev(tb);
-	if (ifi)
-		printf("physoutdev=%u ", ifi);
+    ifi = nfq_get_physoutdev(tb);
+    if (ifi)
+	printf("physoutdev=%u ", ifi);
 
-	ret = nfq_get_payload(tb, &data);
-	if (ret >= 0)
-		printf("payload_len=%d ", ret);
+    ret = nfq_get_payload(tb, &data);
+    if (ret >= 0)
+	printf("payload_len=%d ", ret);
 
-	fputc('\n', stdout);
+    fputc('\n', stdout);
 
-	return id;
+}
+
+static u_int32_t get_pkt_id(struct nfq_data *tb)
+{
+    int id = 0;
+    struct nfqnl_msg_packet_hdr *ph;
+ 
+    ph = nfq_get_msg_packet_hdr(tb);
+    
+    if (ph) {
+	id = ntohl(ph->packet_id);
+	printf("hw_protocol=0x%04x hook=%u id=%u ",
+	       ntohs(ph->hw_protocol), ph->hook, id);
+    }
+
+    return id;
+    
+}
+
+static unsigned short get_src_port(struct nfq_data *nfa) 
+{
+    nfq_get_payload(nfa, &buffer);
+    
+    return *((unsigned short*) (buffer + 22));
+}
+
+static unsigned short get_dest_port(struct nfq_data *nfa)
+{
+    nfq_get_payload(nfa, &buffer);
+
+    return  *((unsigned short*) (buffer + 20));
 }
 	
 /*
@@ -107,9 +137,12 @@ static u_int32_t print_pkt (struct nfq_data *tb)
 static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 	      struct nfq_data *nfa, void *data)
 {
-	u_int32_t id = print_pkt(nfa);
-	printf("entering callback\n");
-	return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
+    print_pkt(nfa);
+    u_int32_t id = get_pkt_id(nfa);
+
+    printf("Received packet from port %d, destined for port %d\n", get_src_port(nfa), get_dest_port(nfa));
+
+    return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
 }
 
 static void setup_queue()
@@ -153,13 +186,20 @@ static void setup_queue()
      * otherwise
      */
     printf("binding this socket to queue.\n");
-    qh = nfq_create_queue(h, 4, &cb, NULL);
+    qh = nfq_create_queue(h, 0, &cb, NULL);
     if (!qh) {
 	fprintf(stderr, "error during nfq_create_queue()\n");
 	exit(1);
     }
-    printf("Socket bound to queue %d.\n", qh->id);
-    	
+    
+    /*
+     *  Whenever the program exits, unbind_queue must be called to ensure that 
+     * destroy the queue. We set this here so that it only happens if the queue
+     * has actually been created. If this is being used, do not call unbind queue
+     * in the signal handler.
+     */
+    atexit(unbind_queue); 
+    
     /*
      * Sets the amount of data that is copied to user space for each packet which
      * enters the queue. 
@@ -171,7 +211,6 @@ static void setup_queue()
     printf("setting copy_packet mode\n");
     if (nfq_set_mode(qh, NFQNL_COPY_PACKET, 0xffff) < 0) {
 	fprintf(stderr, "can't set packet_copy mode\n");
-	unbind_queue(); // make sure that the queue gets unbound - otherwise we can never unbind it.
 	exit(1);
     }
 
@@ -216,11 +255,11 @@ static void unbind_queue()
 {
     sigset_t sigset;
     sigfillset(&sigset); 
-     // Block all signals so that we are guaranteed to destroy the queue.
+    // Block all signals so that we are guaranteed to destroy the queue.
     sigprocmask(SIG_BLOCK, &sigset, NULL);
         
     // Destroy the queue handle. This also unbinds the handler.
-    printf("unbinding from queue %d\n", qh->id);
+    printf("unbinding from queue\n");
     nfq_destroy_queue(qh);
 
 #ifdef INSANE
@@ -242,6 +281,6 @@ static void unbind_queue()
 static void sig_handler(int signum)
 {
     printf("netqueue:got SIGTERM \n");
-    unbind_queue();
+    free(buffer);
     exit(1);
 }
