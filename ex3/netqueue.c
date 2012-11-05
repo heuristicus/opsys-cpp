@@ -1,5 +1,7 @@
 #include "limiter.h"
 
+//#define VERBOSE
+
 static void sig_handler(int signum);
 static void setup_queue();
 static void* handle_packets();
@@ -12,6 +14,14 @@ struct nfq_q_handle *qh;
 struct itimerval timer;
 
 int conn_num = 0;
+int drop_count = 0;
+int accept_count = 0;
+
+int elapsed_time = 0;
+int limit_exceeded_count = 0;
+
+int limit_exceeded;
+
 pthread_mutex_t lock;
 int *threshold;
 
@@ -139,12 +149,28 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
     pthread_mutex_lock(&lock);
     
     conn_num++;
-
+    // If this value ever exceeds zero, we are in excess of the limit.
+    limit_exceeded = conn_num - *threshold; 
+    
     pthread_mutex_unlock(&lock);
 
-    if (conn_num > *threshold){
+#ifdef VERBOSE
+    printf("Connections remaining until limit exceeded: %d\n", -limit_exceeded);
+#endif
+
+    if (limit_exceeded <= 0){
+#ifdef VERBOSE
+	printf("Packet accepted...\n");
+#endif
+	accept_count++;
 	return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
     } else {
+#ifdef VERBOSE
+	printf("Dropping packet...\n");
+#endif
+	drop_count++;
+	limit_exceeded_count++;
+	
 	return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
     }
     
@@ -284,7 +310,8 @@ static void alrm_handler(int signum)
 {
     printf("Handled %d connections in the last second.\n", conn_num);
 
-    
+    elapsed_time++;
+        
     pthread_mutex_lock(&lock);
     
     conn_num = 0;
@@ -301,6 +328,9 @@ static void sig_handler(int signum)
 {
     if (signum == SIGTERM){
 	printf("netqueue:got SIGTERM \n");
+	printf("Handled %d connections in total. "\
+	       "\nAccepted %d, dropped %d packets.\n"\
+	       "The threshold was exceeded %d times.\n", accept_count + drop_count, accept_count, drop_count, limit_exceeded_count);
 	exit(1);
     } else {
 	perror("Error.");
