@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     }
     
     if (argc < 5){
-	printf("Missing parameters.\nusage: %s port max_connections_per_sec firewall_conf firewall_reset\n", argv[0]);
+	printf("Missing parameters.\nusage: %s port max_connections_per_sec wait_time firewall_conf firewall_reset\n", argv[0]);
 	exit(1);
     }
 
@@ -36,15 +36,21 @@ int main(int argc, char *argv[])
     check(sigaction(SIGINT, &handler, NULL), "Could not bind SIGINT action handler.");
     check(sigaction(SIGTERM, &handler, NULL), "Could not bind SIGTERM action handler.");
     
-    char *netq_args[4] = {"netqueue", argv[1], argv[2], NULL};
+    if (atoi(argv[1]) == 0 || atoi(argv[2]) == 0 || atoi(argv[3]) == 0){
+	printf("port, max_connections_per_sec and wait_time must be integer values.\n");
+	printf("usage: %s port max_connections_per_sec wait_time firewall_conf firewall_reset\n", argv[0]);
+	exit(1);
+    }
+	
+    char *netq_args[5] = {"netqueue", argv[1], argv[2], argv[3], NULL};
 
     fsetup = malloc(FSTR_LEN);
     freset = malloc(FSTR_LEN);
     
-    sprintf(fsetup, "iptables-restore %s", argv[3]);
-    sprintf(freset, "iptables-restore %s", argv[4]);
+    sprintf(fsetup, "iptables-restore %s", argv[4]);
+    sprintf(freset, "iptables-restore %s", argv[5]);
         
-    printf("Applying iptables config from file %s\n", argv[3]);
+    printf("Applying iptables config from file %s\n", argv[4]);
     system(fsetup); // This is quite insecure...
     
 

@@ -8,6 +8,7 @@ static void* handle_packets();
 static void unbind_queue();
 static void setup_timer();
 static void alrm_handler(int signum);
+static void reset_timer(int interval);
 
 struct nfq_handle *h;
 struct nfq_q_handle *qh;
@@ -16,14 +17,15 @@ struct itimerval timer;
 int conn_num = 0;
 int drop_count = 0;
 int accept_count = 0;
-
 int elapsed_time = 0;
 int limit_exceeded_count = 0;
 
-int limit_exceeded;
+int limit_exceeded; // If this is positive, we have exceeded the threshold
+int accept_packets = 1;
 
 pthread_mutex_t lock;
 int *threshold;
+int *reject_time;
 
 int main(int argc, char *argv[])
 {
@@ -32,10 +34,17 @@ int main(int argc, char *argv[])
 	printf("%s: You must be root to run this program.\n", argv[0]);
 	exit(1);
     }
+    
+    if (argc < 4){
+	printf("usage: %s portno max_connections_per_sec wait_time\n", argv[0]);
+    }
 
+    // Store values in pointer in case it becomes necessary to use multiple threads. 
     int t = atoi(argv[2]);
     threshold = &t;
-            
+    int r = atoi(argv[3]);
+    reject_time = &r;
+                
     struct sigaction handler;
     handler.sa_handler = sig_handler;
     handler.sa_flags = 0;
@@ -64,7 +73,7 @@ int main(int argc, char *argv[])
     }
 
     // Run the packet handler in a thread so that we can handle timer interrupts.
-    int result = pthread_create(thread, &pthread_attr, handle_packets, (void*) threshold);
+    int result = pthread_create(thread, &pthread_attr, handle_packets, NULL);
     if (result != 0){
 	fprintf(stderr, "Thread creation failed.\n");
 	exit(1);
@@ -118,6 +127,20 @@ static void* handle_packets(void *data)
     	 */
     	nfq_handle_packet(h, buf, rv);
 	
+	if (limit_exceeded > 0 && accept_packets){ // The limit has been exceeded.
+	    pthread_mutex_lock(&lock);
+	    accept_packets = 0; // Drop all packets we receive
+	    pthread_mutex_unlock(&lock);
+	    
+	    limit_exceeded_count++;
+	    printf("Over limit. Sending alarm. Will drop all packets for the next %d seconds.\n", *reject_time);
+	    /* 
+	     * When we do this the timer should be set to expire in the
+	     * specified number of seconds. When the alarm goes off, we will
+	     * reset the timer to its original values and accept packets again.
+	     */
+	    alarm(*reject_time); 
+	}
     }
 
     return 0;
@@ -158,19 +181,20 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
     printf("Connections remaining until limit exceeded: %d\n", -limit_exceeded);
 #endif
 
-    if (limit_exceeded <= 0){
+    if (limit_exceeded <= 0 && accept_packets){
 #ifdef VERBOSE
 	printf("Packet accepted...\n");
 #endif
 	accept_count++;
 	return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
-    } else {
+    } else if (limit_exceeded > 0 || !accept_packets){
 #ifdef VERBOSE
 	printf("Dropping packet...\n");
 #endif
 	drop_count++;
-	limit_exceeded_count++;
-	
+	return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
+    } else { // this case should never happen
+	printf("SOMETHING WENT WRONG!\n");
 	return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
     }
     
@@ -308,16 +332,41 @@ static void setup_timer()
  */
 static void alrm_handler(int signum)
 {
-    printf("Handled %d connections in the last second.\n", conn_num);
+    if (accept_packets){ // If we are currently accepting packets.
+	printf("Handled %d connections in the last second.\n", conn_num);
 
-    elapsed_time++;
+	elapsed_time++;
         
-    pthread_mutex_lock(&lock);
+	pthread_mutex_lock(&lock);
     
-    conn_num = 0;
+	conn_num = 0;
     
-    pthread_mutex_unlock(&lock);
+	pthread_mutex_unlock(&lock);
+    } else { 
+	// We are not currently accepting packets - this should only be entered
+	// after the alarm we set has expired. When this happens we reset the
+	// timer to continue normal operation.
+	pthread_mutex_lock(&lock);
+	
+	printf("Dropped %d connection attempts while not accepting connections.\n", conn_num);
+	conn_num = 0;
+	accept_packets = 1;
+		
+	pthread_mutex_unlock(&lock);
+	
+	reset_timer(1);
+    }
     
+    
+}
+
+
+static void reset_timer(int interval)
+{
+    timer.it_value.tv_sec = interval;
+    timer.it_interval = timer.it_value;
+    
+    setitimer(ITIMER_REAL, &timer, NULL);
 }
 
 /*
