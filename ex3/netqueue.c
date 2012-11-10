@@ -127,7 +127,8 @@ static void* handle_packets(void *data)
     	 */
     	nfq_handle_packet(h, buf, rv);
 	
-	if (limit_exceeded > 0 && accept_packets){ // The limit has been exceeded.
+	// If the limit has been exceeded and we are still accepting packets
+	if (limit_exceeded > 0 && accept_packets){ 
 	    pthread_mutex_lock(&lock);
 	    accept_packets = 0; // Drop all packets we receive
 	    pthread_mutex_unlock(&lock);
@@ -181,12 +182,14 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
     printf("Connections remaining until limit exceeded: %d\n", -limit_exceeded);
 #endif
 
-    if (limit_exceeded <= 0 && accept_packets){
+    // If we have not exceeded the limit and packets are being accepted
+    if (limit_exceeded <= 0 && accept_packets){ 
 #ifdef VERBOSE
 	printf("Packet accepted...\n");
 #endif
 	accept_count++;
 	return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+	// the limit has been exceeded or we are not accepting packets
     } else if (limit_exceeded > 0 || !accept_packets){
 #ifdef VERBOSE
 	printf("Dropping packet...\n");
@@ -345,10 +348,12 @@ static void alrm_handler(int signum)
     } else { 
 	// We are not currently accepting packets - this should only be entered
 	// after the alarm we set has expired. When this happens we reset the
-	// timer to continue normal operation.
-	pthread_mutex_lock(&lock);
+	// timer to continue normal operation and set packets to be accepted again.
 	
 	printf("Dropped %d connection attempts while not accepting connections.\n", conn_num);
+
+	pthread_mutex_lock(&lock);
+	
 	conn_num = 0;
 	accept_packets = 1;
 		
@@ -360,7 +365,9 @@ static void alrm_handler(int signum)
     
 }
 
-
+/*
+ * Resets the timer to tick on the specified interval.
+ */
 static void reset_timer(int interval)
 {
     timer.it_value.tv_sec = interval;

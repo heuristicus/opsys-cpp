@@ -8,12 +8,11 @@
 
 #define FSTR_LEN 100
 
-char* fsetup;
-char* freset;
-
 static void sig_handler(int signum);
+static void setup_iptables();
 
 pid_t q_pid;
+int port;
 
 int main(int argc, char *argv[])
 {
@@ -23,8 +22,8 @@ int main(int argc, char *argv[])
 	exit(1);
     }
     
-    if (argc < 5){
-	printf("Missing parameters.\nusage: %s port max_connections_per_sec wait_time firewall_conf firewall_reset\n", argv[0]);
+    if (argc < 4){
+	printf("Missing parameters.\nusage: %s port max_connections_per_sec wait_time\n", argv[0]);
 	exit(1);
     }
 
@@ -36,24 +35,16 @@ int main(int argc, char *argv[])
     check(sigaction(SIGINT, &handler, NULL), "Could not bind SIGINT action handler.");
     check(sigaction(SIGTERM, &handler, NULL), "Could not bind SIGTERM action handler.");
     
-    if (atoi(argv[1]) == 0 || atoi(argv[2]) == 0 || atoi(argv[3]) == 0){
+    if ((port = atoi(argv[1])) == 0 || atoi(argv[2]) == 0 || atoi(argv[3]) == 0){
 	printf("port, max_connections_per_sec and wait_time must be integer values.\n");
 	printf("usage: %s port max_connections_per_sec wait_time firewall_conf firewall_reset\n", argv[0]);
 	exit(1);
     }
-	
+
     char *netq_args[5] = {"netqueue", argv[1], argv[2], argv[3], NULL};
 
-    fsetup = malloc(FSTR_LEN);
-    freset = malloc(FSTR_LEN);
-    
-    sprintf(fsetup, "iptables-restore %s", argv[4]);
-    sprintf(freset, "iptables-restore %s", argv[5]);
+    setup_iptables("-A");
         
-    printf("Applying iptables config from file %s\n", argv[4]);
-    system(fsetup); // This is quite insecure...
-    
-
     if ((q_pid = fork()) < 0){
 	perror("Something went wrong when attempting to fork.");
 	exit(1);
@@ -75,6 +66,32 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+/*
+ * Sets up or resets iptables with the port number received in the arguments. The action
+ * is -D delete, or -A add. Three rules are added to reroute packets from the kernel into
+ * user space.
+ */
+static void setup_iptables(char* action)
+{
+    // Basic error check. Only allow commands that we specify.
+    if (strcmp("-D", action) && strcmp("-A", action)){
+	printf("Invalid action for iptables. %s\n", action);
+	exit(1);
+    }
+
+    char *scall = malloc(FSTR_LEN);
+    // Possible security issues since we are receiving the port number from commandline?
+    // using atoi should at least mean that we are getting an integer and not a string, so
+    // it is probably safe? This should at least be safer than reading in a filename and
+    // then using iptables-restore to read the file (or the malicious code)
+    sprintf(scall, "iptables %s INPUT -p tcp --dport %d --syn -j QUEUE", action, port);
+    system(scall);
+    sprintf(scall, "iptables %s INPUT -p tcp --dport %d -m state --state ESTABLISHED,RELATED -j ACCEPT", action, port);
+    system(scall);
+    sprintf(scall, "iptables %s INPUT -p tcp --dport %d -j DROP", action, port);
+    system(scall);
+    free(scall);
+}
 
 static void sig_handler(int signum)
 {
@@ -85,6 +102,6 @@ static void sig_handler(int signum)
     q_pid = wait(&status); // Wait for the child to exit
     printf("Child process %d exited with status %d\n", q_pid, status);
     printf("Resetting iptables\n");
-    system(freset);
+    setup_iptables("-D");
     printf("Parent exiting.\n");
 }
