@@ -2,6 +2,10 @@
 
 //#define VERBOSE
 
+// The time we wait before halving the the time for which we drop packets
+// upon the limit being exceeded
+#define DEFAULT_DECAY_TIME 5
+
 static void sig_handler(int signum);
 static void setup_queue();
 static void* handle_packets();
@@ -24,8 +28,9 @@ int limit_exceeded; // If this is positive, we have exceeded the threshold
 int accept_packets = 1;
 
 pthread_mutex_t lock;
-int *threshold;
-int *reject_time;
+int threshold;
+int reject_time_orig;
+int reject_time;
 
 int main(int argc, char *argv[])
 {
@@ -39,11 +44,12 @@ int main(int argc, char *argv[])
 	printf("usage: %s portno max_connections_per_sec wait_time\n", argv[0]);
     }
 
-    // Store values in pointer in case it becomes necessary to use multiple threads. 
-    int t = atoi(argv[2]);
-    threshold = &t;
-    int r = atoi(argv[3]);
-    reject_time = &r;
+    if ((threshold = atoi(argv[2])) == 0){
+	printf("Threshold must be > 0.\n");
+	exit(1);
+    }
+
+    reject_time_orig = reject_time = atoi(argv[3]);
                 
     struct sigaction handler;
     handler.sa_handler = sig_handler;
@@ -134,13 +140,18 @@ static void* handle_packets(void *data)
 	    pthread_mutex_unlock(&lock);
 	    
 	    limit_exceeded_count++;
-	    printf("Over limit. Sending alarm. Will drop all packets for the next %d seconds.\n", *reject_time);
+	    printf("Over limit. Sending alarm. Will drop all packets for the next %d seconds.\n", reject_time);
 	    /* 
 	     * When we do this the timer should be set to expire in the
 	     * specified number of seconds. When the alarm goes off, we will
 	     * reset the timer to its original values and accept packets again.
 	     */
-	    alarm(*reject_time); 
+	    alarm(reject_time);
+	    
+	    // Double the time we drop packets for every time the limit is exceeded.
+	    pthread_mutex_lock(&lock);
+	    reject_time *= 2;
+	    pthread_mutex_unlock(&lock);
 	}
     }
 
@@ -174,10 +185,12 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
     
     conn_num++;
     // If this value ever exceeds zero, we are in excess of the limit.
-    limit_exceeded = conn_num - *threshold; 
+    limit_exceeded = conn_num - threshold; 
     
     pthread_mutex_unlock(&lock);
-
+    
+    int verdict;
+    
 #ifdef VERBOSE
     printf("Connections remaining until limit exceeded: %d\n", -limit_exceeded);
 #endif
@@ -188,19 +201,19 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 	printf("Packet accepted...\n");
 #endif
 	accept_count++;
-	return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+	verdict = NF_ACCEPT;
 	// the limit has been exceeded or we are not accepting packets
     } else if (limit_exceeded > 0 || !accept_packets){
 #ifdef VERBOSE
 	printf("Dropping packet...\n");
 #endif
 	drop_count++;
-	return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
+	verdict = NF_DROP;
     } else { // this case should never happen
 	printf("SOMETHING WENT WRONG!\n");
-	return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
+	verdict = NF_DROP;
     }
-    
+    return nfq_set_verdict(qh, id, verdict, 0, NULL);    
 }
 
 /*
@@ -287,6 +300,7 @@ static void unbind_queue()
     sigset_t sigset;
     sigfillset(&sigset); 
     // Block all signals so that we are guaranteed to destroy the queue.
+    // (Unless a kill -9 happens)
     sigprocmask(SIG_BLOCK, &sigset, NULL);
         
     // Destroy the queue handle. This also unbinds the handler.
@@ -320,10 +334,10 @@ static void setup_timer()
     
     check(sigaction(SIGALRM, &alrm, NULL), "Failed to set up alarm signal handler");
         
-    timer.it_value.tv_sec = 1;
+    timer.it_value.tv_sec = 1; // Set the signal send time
     timer.it_value.tv_usec = 0;
     
-    timer.it_interval = timer.it_value;
+    timer.it_interval = timer.it_value; // Timer sends a signal each interval
 
     check(setitimer(ITIMER_REAL, &timer, NULL), "Failed to set up timer.");
         
@@ -339,8 +353,16 @@ static void alrm_handler(int signum)
 	printf("Handled %d connections in the last second.\n", conn_num);
 
 	elapsed_time++;
-        
+	
 	pthread_mutex_lock(&lock);
+	// We allow the rejection time to decay gradually, so that we don't wait for ages if
+	// the limit hasn't been exceeded for a while. Will only decay if we are accepting
+	// packets, which means we have to have a time period of DEFAULT_DECAY_TIME without
+	// the limit being exceeded before the decay happens.
+	if (elapsed_time % DEFAULT_DECAY_TIME == 0 && reject_time > reject_time_orig){
+	    reject_time /= 2;
+	    printf("Rejection time decayed to %d.\n", reject_time);
+	}
     
 	conn_num = 0;
     
@@ -349,8 +371,9 @@ static void alrm_handler(int signum)
 	// We are not currently accepting packets - this should only be entered
 	// after the alarm we set has expired. When this happens we reset the
 	// timer to continue normal operation and set packets to be accepted again.
-	
 	printf("Dropped %d connection attempts while not accepting connections.\n", conn_num);
+
+	elapsed_time += reject_time; // Add the time that we were dropping packets
 
 	pthread_mutex_lock(&lock);
 	
@@ -359,6 +382,7 @@ static void alrm_handler(int signum)
 		
 	pthread_mutex_unlock(&lock);
 	
+		
 	reset_timer(1);
     }
     
@@ -391,5 +415,4 @@ static void sig_handler(int signum)
     } else {
 	perror("Error.");
     }
-    
 }

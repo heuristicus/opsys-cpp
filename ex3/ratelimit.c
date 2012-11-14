@@ -22,6 +22,8 @@ int main(int argc, char *argv[])
 	exit(1);
     }
     
+    printf("argc %d\n", argc);
+    
     if (argc < 4){
 	printf("Missing parameters.\nusage: %s port max_connections_per_sec wait_time\n", argv[0]);
 	exit(1);
@@ -84,6 +86,7 @@ static void setup_iptables(char* action)
     // using atoi should at least mean that we are getting an integer and not a string, so
     // it is probably safe? This should at least be safer than reading in a filename and
     // then using iptables-restore to read the file (or the malicious code)
+    // This sets up the queue to reroute packets that arrive at the specified port.
     sprintf(scall, "iptables %s INPUT -p tcp --dport %d --syn -j QUEUE", action, port);
     system(scall);
     sprintf(scall, "iptables %s INPUT -p tcp --dport %d -m state --state ESTABLISHED,RELATED -j ACCEPT", action, port);
