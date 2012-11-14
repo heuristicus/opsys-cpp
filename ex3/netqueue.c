@@ -209,7 +209,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 #endif
 	drop_count++;
 	verdict = NF_DROP;
-    } else { // this case should never happen
+    } else { // this case never happen (but drop everything if it does)
 	printf("SOMETHING WENT WRONG!\n");
 	verdict = NF_DROP;
     }
@@ -361,7 +361,7 @@ static void alrm_handler(int signum)
 	// the limit being exceeded before the decay happens.
 	if (elapsed_time % DEFAULT_DECAY_TIME == 0 && reject_time > reject_time_orig){
 	    reject_time /= 2;
-	    printf("Rejection time decayed to %d.\n", reject_time);
+	    printf("Rejection time decayed to %d seconds.\n", reject_time);
 	}
     
 	conn_num = 0;
@@ -382,11 +382,8 @@ static void alrm_handler(int signum)
 		
 	pthread_mutex_unlock(&lock);
 	
-		
 	reset_timer(1);
     }
-    
-    
 }
 
 /*
