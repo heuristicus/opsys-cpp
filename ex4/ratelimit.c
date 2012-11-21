@@ -12,10 +12,18 @@ MODULE_AUTHOR ("Michal Staniaszek <mxs968@cs.bham.ac.uk>");
 MODULE_DESCRIPTION ("Extensions to the firewall") ;
 MODULE_LICENSE("GPL");
 
+int init_fw_hook(void);
+int tmr_init(void);
+void timerFun (unsigned long arg);
+
 struct nf_hook_ops *reg;
 struct timer_list myTimer;
 int i;
 
+/*
+ * Called whenever a packet is received on the network. May be called
+ * multiple times in very quick succession, from inside the kernel.
+ */
 unsigned int FirewallExtensionHook (unsigned int hooknum,
 				    struct sk_buff *skb,
 				    const struct net_device *in,
@@ -29,13 +37,13 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
     /* get the tcp-header for the packet */
     tcp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(struct tcphdr), &_tcph);
     if (!tcp) {
-	printk (KERN_INFO "Could not get tcp-header!\n");
+	printk(KERN_INFO "Could not get tcp-header!\n");
 	return NF_ACCEPT;
     }
     if (tcp->syn) {
 	struct iphdr *ip;
 	
-	printk (KERN_INFO "firewall: Starting connection \n");
+	printk(KERN_INFO "firewall: Starting connection \n");
 	ip = ip_hdr(skb);
 	if (!ip) {
 	    printk(KERN_INFO "firewall: Cannot get IP header!\n!");
@@ -53,22 +61,32 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
 
 EXPORT_SYMBOL (FirewallExtensionHook);
 
-void timerFun (unsigned long arg) {
-    int tmp;
-    /* In this simple example, locking is an overkill - this operation should finish within a second  - used here to demonstrate how it works */
-    i++;
-    tmp = i;
-    printk (KERN_INFO "Called timer %d times\n", tmp); 
-    myTimer.expires = jiffies + HZ;
-    add_timer (&myTimer); /* setup the timer again */
-}
-
-int init_module(void)
+/*
+ * Initialises the timer we will use to reset the connection count.
+ */
+int tmr_init(void)
 {
-    int errno;
     unsigned long currentTime = jiffies; 
     unsigned long expiryTime = currentTime + HZ; /* HZ gives number of ticks per second */
+    
+    init_timer(&myTimer);
+    myTimer.function = timerFun;
+    myTimer.expires = expiryTime;
+    myTimer.data = 0;
 
+    add_timer(&myTimer);
+    printk (KERN_INFO "timer added \n");
+    return 0;
+}
+
+/*
+ * Initialises the firewall hook which is called by another module whenever a
+ * packet is received from the network.
+ */
+int init_fw_hook(void)
+{
+    int errno;
+    
     /* allocate space for hook */
     reg = kmalloc (sizeof (struct nf_hook_ops), GFP_KERNEL);
     if (!reg) {
@@ -83,32 +101,58 @@ int init_module(void)
 
     errno = nf_register_hook(reg); /* register the hook */
     
-    /* pre-defined kernel variable jiffies gives current value of ticks */
-    
-    init_timer(&myTimer);
-    myTimer.function = timerFun;
-    myTimer.expires = expiryTime;
-    myTimer.data = 0;
-
-    add_timer(&myTimer);
-    printk (KERN_INFO "timer added \n");
-  
-    if (errno) {
-	printk (KERN_INFO "Firewall extension could not be registered!\n");
-	kfree(reg);
-    } else {
-	printk(KERN_INFO "Firewall extensions module loaded\n");
-    }
-
-    // A non 0 return means init_module failed; module can't be loaded.
     return errno;
 }
 
+/*
+ * Called whenever the timer expires. This is called from an interrupt.
+ */
+void timerFun (unsigned long arg) {
+    int tmp;
+    i++;
+    tmp = i;
+    printk (KERN_INFO "Called timer %d times\n", tmp); 
+    myTimer.expires = jiffies + HZ;
+    add_timer (&myTimer); /* setup the timer again */
+}
 
+/*
+ * Called when the module is started up (usually with insmod(?)). Should perform
+ * module setup, and decide whether the module should be allowed to run or not.
+ * A non-zero return indicates that something is wrong and the module should
+ * not be started up.
+ */
+int init_module(void)
+{
+    int errno = 0;
+    int ret;
+        
+    if ((ret = init_fw_hook())){
+	printk (KERN_INFO "Firewall extension could not be registered!\n");
+	kfree(reg);
+	errno++;
+    }
+    
+    if ((ret = tmr_init())){
+	printk (KERN_INFO "Could not initialise timer.\n");
+	errno++;
+    }
+        
+    return errno;
+}
+
+/*
+ * Called when the module is shut down (usually with rmmod(?)). Should free all
+ * allocated memory and perform any necessary cleanup. Anything created within
+ * this module which is no longer required by anyone else should be destroyed.
+ */
 void cleanup_module(void)
 {
-    nf_unregister_hook(reg); /* restore everything to normal */
+    // Remove the firewall extension hook
+    nf_unregister_hook(reg);
     kfree(reg);
+    
+    // If the timer is still running, remove it.
     if (!del_timer (&myTimer)) {
 	printk (KERN_INFO "Couldn't remove timer!!\n");
     }
