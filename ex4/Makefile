@@ -1,4 +1,5 @@
 KERNELDIR=/lib/modules/`uname -r`/build
+EXTRA_CFLAGS=-Werror -Wall
 #ARCH=i386
 #KERNELDIR=/usr/src/kernels/`uname -r`-i686
 

@@ -17,8 +17,13 @@ int tmr_init(void);
 void timerFun (unsigned long arg);
 
 struct nf_hook_ops *reg;
-struct timer_list myTimer;
-int i;
+struct timer_list tmr;
+int pkt_count;
+int timer_count;
+int alarm_flag;
+int active = 1;
+
+spinlock_t my_lock = SPIN_LOCK_UNLOCKED;
 
 /*
  * Called whenever a packet is received on the network. May be called
@@ -33,7 +38,8 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
 
     struct tcphdr *tcp;
     struct tcphdr _tcph;
-
+    struct iphdr *ip;
+    
     /* get the tcp-header for the packet */
     tcp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(struct tcphdr), &_tcph);
     if (!tcp) {
@@ -41,22 +47,29 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
 	return NF_ACCEPT;
     }
     if (tcp->syn) {
-	struct iphdr *ip;
-	
-	printk(KERN_INFO "firewall: Starting connection \n");
-	ip = ip_hdr(skb);
-	if (!ip) {
-	    printk(KERN_INFO "firewall: Cannot get IP header!\n!");
-	}
-	else {
-	    printk(KERN_INFO "firewall: Source address = %u.%u.%u.%u\n", NIPQUAD(ip->saddr));
-	}
-	printk(KERN_INFO "firewall: destination port = %d\n", htons(tcp->dest)); 
-	if (htons(tcp->dest) == 80) {
+	pkt_count++;
+
+	if (pkt_count % 20 == 0)
+	    alarm_flag = 1;
+		
+	if (active){
+	    printk(KERN_INFO "firewall: Packet received \n");
+	    ip = ip_hdr(skb);
+	    if (!ip) {
+		printk(KERN_INFO "firewall: Cannot get IP header!\n!");
+	    }
+	    else {
+		printk(KERN_INFO "firewall: Source address = %u.%u.%u.%u\n", NIPQUAD(ip->saddr));
+	    }
+	    printk(KERN_INFO "firewall: destination port = %d\n", htons(tcp->dest)); 
+	    if (htons(tcp->dest) == 80) {
+		return NF_DROP;
+	    }
+	} else {
 	    return NF_DROP;
 	}
     }
-    return NF_ACCEPT;	
+    return NF_ACCEPT;
 }
 
 EXPORT_SYMBOL (FirewallExtensionHook);
@@ -69,12 +82,12 @@ int tmr_init(void)
     unsigned long currentTime = jiffies; 
     unsigned long expiryTime = currentTime + HZ; /* HZ gives number of ticks per second */
     
-    init_timer(&myTimer);
-    myTimer.function = timerFun;
-    myTimer.expires = expiryTime;
-    myTimer.data = 0;
+    init_timer(&tmr);
+    tmr.function = timerFun;
+    tmr.expires = expiryTime;
+    tmr.data = 0;
 
-    add_timer(&myTimer);
+    add_timer(&tmr);
     printk (KERN_INFO "timer added \n");
     return 0;
 }
@@ -108,12 +121,17 @@ int init_fw_hook(void)
  * Called whenever the timer expires. This is called from an interrupt.
  */
 void timerFun (unsigned long arg) {
-    int tmp;
-    i++;
-    tmp = i;
-    printk (KERN_INFO "Called timer %d times\n", tmp); 
-    myTimer.expires = jiffies + HZ;
-    add_timer (&myTimer); /* setup the timer again */
+    timer_count++;
+    printk(KERN_INFO "Packet count: %d", pkt_count);
+    if (alarm_flag){
+	printk(KERN_INFO "Alarm flag set. Using extended expiry time.");
+	tmr.expires = jiffies + HZ * 5;
+	alarm_flag = 0;
+    } else {
+	printk(KERN_INFO "Using standard timer expiry time.");
+	tmr.expires = jiffies + HZ;
+    }
+    add_timer(&tmr); /* setup the timer again */
 }
 
 /*
@@ -131,11 +149,15 @@ int init_module(void)
 	printk (KERN_INFO "Firewall extension could not be registered!\n");
 	kfree(reg);
 	errno++;
+    } else {
+	printk (KERN_INFO "Firewall extension registered.\n");
     }
     
     if ((ret = tmr_init())){
 	printk (KERN_INFO "Could not initialise timer.\n");
 	errno++;
+    } else {
+	printk (KERN_INFO "Timer initialised.\n");
     }
         
     return errno;
@@ -153,11 +175,11 @@ void cleanup_module(void)
     kfree(reg);
     
     // If the timer is still running, remove it.
-    if (!del_timer (&myTimer)) {
+    if (!del_timer (&tmr)) {
 	printk (KERN_INFO "Couldn't remove timer!!\n");
     }
     else {
-	printk (KERN_INFO "timer removed \n");
+	printk (KERN_INFO "Timer successfully removed.\n");
     }
     printk(KERN_INFO "Firewall extensions module unloaded\n");
 }
