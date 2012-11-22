@@ -12,13 +12,16 @@ if [ "$1" == "-h" ] || [ "$1" == "-help" ]; then
 fi
 
 if [[ -n "$1" ]]; then
+    echo "Sending param 1"
     echo "P $1" > /proc/ratelimit
 fi
 
 if [[ -n "$2" ]]; then
+    echo "Sending param 2"
     echo "P $2" > /proc/ratelimit
 fi
 
 if [[ -n "$3" ]]; then
+    echo "Sending param 3"
     echo "P $3" > /proc/ratelimit
 fi

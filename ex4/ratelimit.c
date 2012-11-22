@@ -22,6 +22,8 @@
 #define SET_WAIT 'W' // wait time after limit exceeded
 #define BUFFERLENGTH 256
 
+//#define VERBOSE
+
 MODULE_AUTHOR ("Michal Staniaszek <mxs968@cs.bham.ac.uk>");
 MODULE_DESCRIPTION ("Extensions to the firewall") ;
 MODULE_LICENSE("GPL");
@@ -37,6 +39,10 @@ int pkt_count;
 int timer_count;
 int alarm_flag;
 int active = 1;
+
+unsigned long portno;
+unsigned long limit = 0; // accept all packets.
+unsigned long wait_time;
 
 spinlock_t my_lock = SPIN_LOCK_UNLOCKED;
 
@@ -58,25 +64,36 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
     /* get the tcp-header for the packet */
     tcp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(struct tcphdr), &_tcph);
     if (!tcp) {
-	printk(KERN_INFO "Could not get tcp-header!\n");
+#ifdef VERBOSE
+	printk(KERN_INFO "ratelimit: could not get tcp-header!\n");
+#endif
 	return NF_ACCEPT;
     }
     if (tcp->syn) {
 	pkt_count++;
 
-	if (pkt_count % 20 == 0)
+	// Set the alarm flag if there is a limit set which has been exceeded.
+	if (limit >= 1 && pkt_count > limit)
 	    alarm_flag = 1;
 		
 	if (active){
-	    printk(KERN_INFO "firewall: Packet received \n");
+#ifdef VERBOSE
+	    printk(KERN_INFO "ratelimit: cacket received \n");
+#endif
 	    ip = ip_hdr(skb);
 	    if (!ip) {
-		printk(KERN_INFO "firewall: Cannot get IP header!\n!");
+#ifdef VERBOSE
+		printk(KERN_INFO "ratelimit: cannot get IP header!\n!");
+#endif
 	    }
 	    else {
-		printk(KERN_INFO "firewall: Source address = %u.%u.%u.%u\n", NIPQUAD(ip->saddr));
+#ifdef VERBOSE
+		printk(KERN_INFO "ratelimit: Source address = %u.%u.%u.%u\n", NIPQUAD(ip->saddr));
+#endif
 	    }
-	    printk(KERN_INFO "firewall: destination port = %d\n", htons(tcp->dest)); 
+#ifdef VERBOSE
+	    printk(KERN_INFO "ratelimit: destination port = %d\n", htons(tcp->dest)); 
+#endif
 	    if (htons(tcp->dest) == 80) {
 		return NF_DROP;
 	    }
@@ -106,7 +123,7 @@ int tmr_init(void)
     tmr.data = 0;
 
     add_timer(&tmr);
-    printk (KERN_INFO "timer added \n");
+    printk (KERN_INFO "ratelimit: timer initialised. \n");
     return 0;
 }
 
@@ -140,13 +157,17 @@ int init_fw_hook(void)
  */
 void timerFun (unsigned long arg) {
     timer_count++;
-    printk(KERN_INFO "Packet count: %d", pkt_count);
+#ifdef VERBOSE
+    printk(KERN_INFO "ratelimit: packet count %d", pkt_count);
+#endif
     if (alarm_flag){
-	printk(KERN_INFO "Alarm flag set. Using extended expiry time.");
+	printk(KERN_INFO "ratelimit: Alarm activated. Dropping packets on port %lu for %lu seconds.", portno, wait_time);
 	tmr.expires = jiffies + HZ * 5;
 	alarm_flag = 0;
     } else {
-	printk(KERN_INFO "Using standard timer expiry time.");
+#ifdef VERBOSE
+	printk(KERN_INFO "ratelimit: standard timer.");
+#endif
 	tmr.expires = jiffies + HZ;
     }
     add_timer(&tmr); /* setup the timer again */
@@ -161,15 +182,17 @@ void timerFun (unsigned long arg) {
  */
 int kernelRead (struct file *file, const char *buffer, unsigned long count, void *data) { 
 
-
     char *kernelBuffer; /* the kernel buffer */
- 
+    char **endptr = NULL;
+    unsigned long tmp;
+    //int ret = 0;
+         
     // Second argument controls the behaviour of the memory allocation. GFP_KERNEL is the
     // 'default' argument. It is allowed to sleep, so is appropriate for calls from user space
     // GFP_ATOMIC, on the other hand, is not allowed to sleep, and should be used to allocate
     // memory from interrupt handlers and other code outside of process context.
     kernelBuffer = kmalloc(BUFFERLENGTH, GFP_KERNEL);
-   
+
     if (!kernelBuffer) {
 	return -ENOMEM;
     }
@@ -186,20 +209,40 @@ int kernelRead (struct file *file, const char *buffer, unsigned long count, void
     }
       
     kernelBuffer[BUFFERLENGTH -1] = '\0'; /* safety measure: ensure string termination */
-    printk(KERN_INFO "kernelRead: Having read %s\n", kernelBuffer);
+    printk(KERN_INFO "ratelimit: Having read %s\n", kernelBuffer);
+    
+    // simple_strtoul does no explicit checking. If there are any characters before a number
+    // it will return 0. If there is number before some characters, then that number will be
+    // returned.
+    if ((tmp = simple_strtoul((kernelBuffer+2), endptr, 10)) == 0){
+	printk(KERN_INFO "ratelimit: data read was not a number.");
+	return count;
+    }
+        
+    // We expect a single character in kb[0] and a space in kb[1].
+    // The number should start from kb[2]. strict_strtoul puts an
+    // unsigned long into the third parameter if the call is successful. Otherwise,
+    // zero is put into tmp, and -EINVAL is returned.
+    /* if ((ret = strict_strtoul((kernelBuffer + 2), 10, tmp)) == -EINVAL){ */
+    /* 	printk(KERN_INFO "Extraction of number from string \"%s\" failed.", (kernelBuffer + 2)); */
+    /* 	return count; */
+    /* } */
 
     switch (kernelBuffer[0]) {
     case SET_PORT:
-	printk(KERN_INFO "Setting port.\n");
-	break;
+    	printk(KERN_INFO "ratelimit: port set to %lu", tmp);
+    	portno = tmp;
+    	break;
     case SET_LIMIT:
-	printk(KERN_INFO "Setting limit\n");
-	break;
+    	printk(KERN_INFO "ratelimit: limit set to %lu\n", tmp);
+    	limit = tmp;
+    	break;
     case SET_WAIT:
-	printk(KERN_INFO "Setting wait\n");
-	break;
+    	printk(KERN_INFO "ratelimit: wait time set to %lu\n", tmp);
+    	wait_time = tmp;
+    	break;
     default:
-	printk(KERN_INFO "kernelRead: Illegal command \n");
+    	printk(KERN_INFO "ratelimit: illegal command %c\n", kernelBuffer[0]);
     }
     return count;
 }
@@ -214,26 +257,31 @@ int init_module(void)
 {
     int errno = 0;
     int ret;
-        
+
+            
     if ((ret = init_fw_hook())){
-	printk (KERN_INFO "Firewall extension could not be registered!\n");
+	printk(KERN_INFO "ratelimit: firewall extension could not be registered!\n");
 	kfree(reg);
 	errno++;
     } else {
-	printk (KERN_INFO "Firewall extension registered.\n");
+#ifdef VERBOSE
+	printk(KERN_INFO "ratelimit: firewall extension registered.\n");
+#endif
     }
     
     if ((ret = tmr_init())){
-	printk (KERN_INFO "Could not initialise timer.\n");
+	printk(KERN_INFO "ratelimit: could not initialise timer.\n");
 	errno++;
     } else {
-	printk (KERN_INFO "Timer initialised.\n");
+#ifdef VERBOSE
+	printk(KERN_INFO "ratelimit: timer initialised.\n");
+#endif
     }
 
     // Creates a virtual file to be used for passing values between kernel space and
     // user space. Permission bits are used to determine who can access the file.
     // More about that at http://www.gnu.org/software/libc/manual/html_node/Permission-Bits.html
-    procKernelRead = create_proc_entry ("ratelimit", S_IWUSR | S_IRUGO, NULL);
+    procKernelRead = create_proc_entry("ratelimit", S_IWUSR | S_IRUGO, NULL);
         
     if (!procKernelRead) {
 	return -ENOMEM;
@@ -261,10 +309,10 @@ void cleanup_module(void)
     
     // If the timer is still running, remove it.
     if (!del_timer (&tmr)) {
-	printk (KERN_INFO "Couldn't remove timer!!\n");
+	printk (KERN_INFO "ratelimit: couldn't remove timer - maybe it expired.\n");
     }
     else {
-	printk (KERN_INFO "Timer successfully removed.\n");
+	printk (KERN_INFO "ratelimit: timer successfully removed.\n");
     }
-    printk(KERN_INFO "Firewall extensions module unloaded\n");
+    printk(KERN_INFO "ratelimit: firewall extensions module unloaded\n");
 }
