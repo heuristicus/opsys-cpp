@@ -22,7 +22,7 @@
 #define SET_WAIT 'W' // wait time after limit exceeded
 #define BUFFERLENGTH 256
 
-//#define VERBOSE
+#define VERBOSE
 
 MODULE_AUTHOR ("Michal Staniaszek <mxs968@cs.bham.ac.uk>");
 MODULE_DESCRIPTION ("Extensions to the firewall") ;
@@ -60,6 +60,10 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
     struct tcphdr *tcp;
     struct tcphdr _tcph;
     struct iphdr *ip;
+    unsigned int ret = NF_ACCEPT;
+    
+    if (portno == 0) // If port is unset, allow everything
+	return ret;
     
     /* get the tcp-header for the packet */
     tcp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(struct tcphdr), &_tcph);
@@ -67,18 +71,10 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
 #ifdef VERBOSE
 	printk(KERN_INFO "ratelimit: could not get tcp-header!\n");
 #endif
-	return NF_ACCEPT;
-    }
-    if (tcp->syn) {
-	pkt_count++;
-
-	// Set the alarm flag if there is a limit set which has been exceeded.
-	if (limit >= 1 && pkt_count > limit)
-	    alarm_flag = 1;
-		
-	if (active){
+    } else if (tcp->syn) {
+	if (active){ // If we are accepting packets on the monitored port
 #ifdef VERBOSE
-	    printk(KERN_INFO "ratelimit: cacket received \n");
+	    printk(KERN_INFO "ratelimit: packet received \n");
 #endif
 	    ip = ip_hdr(skb);
 	    if (!ip) {
@@ -94,19 +90,35 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
 #ifdef VERBOSE
 	    printk(KERN_INFO "ratelimit: destination port = %d\n", htons(tcp->dest)); 
 #endif
-	    if (htons(tcp->dest) == 80) {
-		return NF_DROP;
+	    // If the destination of the packet is the one we are monitoring
+	    if (htons(tcp->dest) == portno) {
+		printk(KERN_INFO "ratelimit: packet destined for monitored port received.");
+		pkt_count++;
+		// If we're over the limit, stop accepting packets, set the alarm flag and
+		// drop the packet. Otherwise, accept the packet.
+		if (limit >= 1 && pkt_count > limit){
+		    printk(KERN_INFO "ratelimit: limit exceeded. Dropping all packets to port %lu for %lu seconds.", portno, wait_time);
+		    active = 0;
+		    alarm_flag = 1;
+		    ret = NF_DROP;
+		}
 	    }
-	} else {
-	    return NF_DROP;
+	} else { // We are not accepting packets on the monitored port
+	    // Only drop the packet if it is being sent to the port we are monitoring.
+	    if (htons(tcp->dest) == portno) {
+		pkt_count++;
+		ret = NF_DROP;
+	    }
 	}
     }
-    return NF_ACCEPT;
+    return ret;
 }
 
-// Exports the symbol for dynamic linking. This allows any other kernel module to
-// make use of this method. The definitions of printk and so on are made available
-// in a similar way.
+/* 
+ * Exports the symbol for dynamic linking. This allows any other kernel module to
+ * make use of this method. The definitions of printk and so on are made available
+ * in a similar way.
+ */
 EXPORT_SYMBOL (FirewallExtensionHook);
 
 /*
@@ -123,7 +135,6 @@ int tmr_init(void)
     tmr.data = 0;
 
     add_timer(&tmr);
-    printk (KERN_INFO "ratelimit: timer initialised. \n");
     return 0;
 }
 
@@ -161,15 +172,18 @@ void timerFun (unsigned long arg) {
     printk(KERN_INFO "ratelimit: packet count %d", pkt_count);
 #endif
     if (alarm_flag){
-	printk(KERN_INFO "ratelimit: Alarm activated. Dropping packets on port %lu for %lu seconds.", portno, wait_time);
+	//printk(KERN_INFO "ratelimit: Alarm activated. Dropping packets on port %lu for %lu seconds.", portno, wait_time);
 	tmr.expires = jiffies + HZ * 5;
 	alarm_flag = 0;
     } else {
 #ifdef VERBOSE
 	printk(KERN_INFO "ratelimit: standard timer.");
 #endif
+	active = 1;
 	tmr.expires = jiffies + HZ;
     }
+    // SYNC
+    pkt_count = 0;// Packet count is reset each timer tick. Don't forget to synchronise this
     add_timer(&tmr); /* setup the timer again */
 }
 
@@ -187,10 +201,12 @@ int kernelRead (struct file *file, const char *buffer, unsigned long count, void
     unsigned long tmp;
     //int ret = 0;
          
-    // Second argument controls the behaviour of the memory allocation. GFP_KERNEL is the
-    // 'default' argument. It is allowed to sleep, so is appropriate for calls from user space
-    // GFP_ATOMIC, on the other hand, is not allowed to sleep, and should be used to allocate
-    // memory from interrupt handlers and other code outside of process context.
+    /*
+     * Second argument controls the behaviour of the memory allocation. GFP_KERNEL is the
+     * 'default' argument. It is allowed to sleep, so is appropriate for calls from user space
+     * GFP_ATOMIC, on the other hand, is not allowed to sleep, and should be used to allocate
+     * memory from interrupt handlers and other code outside of process context.
+     */
     kernelBuffer = kmalloc(BUFFERLENGTH, GFP_KERNEL);
 
     if (!kernelBuffer) {
@@ -211,18 +227,22 @@ int kernelRead (struct file *file, const char *buffer, unsigned long count, void
     kernelBuffer[BUFFERLENGTH -1] = '\0'; /* safety measure: ensure string termination */
     printk(KERN_INFO "ratelimit: Having read %s\n", kernelBuffer);
     
-    // simple_strtoul does no explicit checking. If there are any characters before a number
-    // it will return 0. If there is number before some characters, then that number will be
-    // returned.
+    /* 
+     * simple_strtoul does no explicit checking. If there are any characters before a number
+     * it will return 0. If there is number before some characters, then that number will be
+     * returned.
+     */
     if ((tmp = simple_strtoul((kernelBuffer+2), endptr, 10)) == 0){
 	printk(KERN_INFO "ratelimit: data read was not a number.");
 	return count;
     }
-        
-    // We expect a single character in kb[0] and a space in kb[1].
-    // The number should start from kb[2]. strict_strtoul puts an
-    // unsigned long into the third parameter if the call is successful. Otherwise,
-    // zero is put into tmp, and -EINVAL is returned.
+
+    /*   
+     * We expect a single character in kb[0] and a space in kb[1].
+     * The number should start from kb[2]. strict_strtoul puts an
+     * unsigned long into the third parameter if the call is successful. Otherwise,
+     * zero is put into tmp, and -EINVAL is returned.
+     */
     /* if ((ret = strict_strtoul((kernelBuffer + 2), 10, tmp)) == -EINVAL){ */
     /* 	printk(KERN_INFO "Extraction of number from string \"%s\" failed.", (kernelBuffer + 2)); */
     /* 	return count; */
@@ -244,6 +264,9 @@ int kernelRead (struct file *file, const char *buffer, unsigned long count, void
     default:
     	printk(KERN_INFO "ratelimit: illegal command %c\n", kernelBuffer[0]);
     }
+
+    printk(KERN_INFO "ratelimit: portno %lu, limit %lu, wait_time %lu", portno, limit, wait_time);
+    
     return count;
 }
 
@@ -264,23 +287,21 @@ int init_module(void)
 	kfree(reg);
 	errno++;
     } else {
-#ifdef VERBOSE
 	printk(KERN_INFO "ratelimit: firewall extension registered.\n");
-#endif
     }
     
     if ((ret = tmr_init())){
 	printk(KERN_INFO "ratelimit: could not initialise timer.\n");
 	errno++;
     } else {
-#ifdef VERBOSE
 	printk(KERN_INFO "ratelimit: timer initialised.\n");
-#endif
     }
 
-    // Creates a virtual file to be used for passing values between kernel space and
-    // user space. Permission bits are used to determine who can access the file.
-    // More about that at http://www.gnu.org/software/libc/manual/html_node/Permission-Bits.html
+    /*
+     * Creates a virtual file to be used for passing values between kernel space and
+     * user space. Permission bits are used to determine who can access the file.
+     * More about that at http://www.gnu.org/software/libc/manual/html_node/Permission-Bits.html
+     */
     procKernelRead = create_proc_entry("ratelimit", S_IWUSR | S_IRUGO, NULL);
         
     if (!procKernelRead) {
