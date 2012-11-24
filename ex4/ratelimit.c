@@ -22,7 +22,7 @@
 #define SET_WAIT 'W' // wait time after limit exceeded
 #define BUFFERLENGTH 256
 
-#define VERBOSE
+//#define VERBOSE
 
 MODULE_AUTHOR ("Michal Staniaszek <mxs968@cs.bham.ac.uk>");
 MODULE_DESCRIPTION ("Extensions to the firewall") ;
@@ -30,7 +30,7 @@ MODULE_LICENSE("GPL");
 
 int init_fw_hook(void);
 int tmr_init(void);
-void timerFun (unsigned long arg);
+void timer_exp (unsigned long arg);
 
 struct nf_hook_ops *reg;
 struct timer_list tmr;
@@ -44,7 +44,7 @@ unsigned long portno;
 unsigned long limit = 0; // accept all packets.
 unsigned long wait_time;
 
-spinlock_t my_lock = SPIN_LOCK_UNLOCKED;
+spinlock_t spin = SPIN_LOCK_UNLOCKED;
 
 /*
  * Called whenever a packet is received on the network. May be called
@@ -61,7 +61,9 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
     struct tcphdr _tcph;
     struct iphdr *ip;
     unsigned int ret = NF_ACCEPT;
-    
+    // We set this flag if we need to increment the packet count. We increment at the end of the function
+    int increment_flag = 0; 
+        
     if (portno == 0) // If port is unset, allow everything
 	return ret;
     
@@ -72,45 +74,68 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
 	printk(KERN_INFO "ratelimit: could not get tcp-header!\n");
 #endif
     } else if (tcp->syn) {
-	if (active){ // If we are accepting packets on the monitored port
 #ifdef VERBOSE
-	    printk(KERN_INFO "ratelimit: packet received \n");
+	printk(KERN_INFO "ratelimit: packet received \n");
 #endif
-	    ip = ip_hdr(skb);
-	    if (!ip) {
+	ip = ip_hdr(skb);
+	if (!ip) {
 #ifdef VERBOSE
-		printk(KERN_INFO "ratelimit: cannot get IP header!\n!");
+	    printk(KERN_INFO "ratelimit: cannot get IP header!\n!");
 #endif
-	    }
-	    else {
+	}
+	else {
 #ifdef VERBOSE
-		printk(KERN_INFO "ratelimit: Source address = %u.%u.%u.%u\n", NIPQUAD(ip->saddr));
+	    printk(KERN_INFO "ratelimit: Source address = %u.%u.%u.%u\n", NIPQUAD(ip->saddr));
 #endif
-	    }
+	}
 #ifdef VERBOSE
-	    printk(KERN_INFO "ratelimit: destination port = %d\n", htons(tcp->dest)); 
+	printk(KERN_INFO "ratelimit: destination port = %d\n", htons(tcp->dest)); 
 #endif
-	    // If the destination of the packet is the one we are monitoring
-	    if (htons(tcp->dest) == portno) {
-		printk(KERN_INFO "ratelimit: packet destined for monitored port received.");
-		pkt_count++;
-		// If we're over the limit, stop accepting packets, set the alarm flag and
-		// drop the packet. Otherwise, accept the packet.
-		if (limit >= 1 && pkt_count > limit){
-		    printk(KERN_INFO "ratelimit: limit exceeded. Dropping all packets to port %lu for %lu seconds.", portno, wait_time);
-		    active = 0;
-		    alarm_flag = 1;
-		    ret = NF_DROP;
-		}
-	    }
-	} else { // We are not accepting packets on the monitored port
-	    // Only drop the packet if it is being sent to the port we are monitoring.
-	    if (htons(tcp->dest) == portno) {
-		pkt_count++;
-		ret = NF_DROP;
-	    }
+	/* if (active){ // If we are accepting packets on the monitored port */
+	/*     // If the destination of the packet is the one we are monitoring */
+	/*     if (htons(tcp->dest) == portno) { */
+	/* 	printk(KERN_INFO "ratelimit: packet destined for monitored port received."); */
+	/* 	//increment_flag = 1; */
+	/* 	pkt_count++; */
+	/* 	// If we're over the limit, stop accepting packets, set the alarm flag and */
+	/* 	// drop the packet. Otherwise, accept the packet. */
+	/* 	if (limit >= 1 && pkt_count > limit){ */
+	/* 	    printk(KERN_INFO "ratelimit: limit exceeded. Dropping all packets to port %lu for %lu seconds.", portno, wait_time); */
+	/* 	    active = 0; */
+	/* 	    alarm_flag = 1; */
+	/* 	    ret = NF_DROP; */
+	/* 	} */
+	/*     } */
+	/* } else { // We are not accepting packets on the monitored port */
+	/*     // Only drop the packet if it is being sent to the port we are monitoring. */
+	/*     if (htons(tcp->dest) == portno) { */
+	/* 	//increment_flag = 1; */
+	/* 	pkt_count++; */
+	/* 	ret = NF_DROP; */
+	/*     } */
+	/* } */
+	if (htons(tcp->dest) == portno){
+	    increment_flag = 1;
 	}
     }
+    
+    // If we received a packet on the monitored port and a limit has been set
+    if (increment_flag == 1 && limit >= 1){
+	// Is this section too long? Everything in here needs to be done without
+	// interruption other than ret being set.
+    	spin_lock(&spin);
+	pkt_count++;
+	if (active && pkt_count > limit){
+	    printk(KERN_INFO "ratelimit: limit exceeded - alarm flag set");
+	    active = 0;
+	    alarm_flag = 1;
+	    ret = NF_DROP;
+	} else if (!active){
+	    ret = NF_DROP;
+	}
+    	spin_unlock(&spin);
+    }
+
     return ret;
 }
 
@@ -130,7 +155,7 @@ int tmr_init(void)
     unsigned long expiryTime = currentTime + HZ; /* HZ gives number of ticks per second */
     
     init_timer(&tmr);
-    tmr.function = timerFun;
+    tmr.function = timer_exp;
     tmr.expires = expiryTime;
     tmr.data = 0;
 
@@ -166,24 +191,33 @@ int init_fw_hook(void)
 /*
  * Called whenever the timer expires. This is called from an interrupt.
  */
-void timerFun (unsigned long arg) {
+void timer_exp (unsigned long arg) {
     timer_count++;
 #ifdef VERBOSE
     printk(KERN_INFO "ratelimit: packet count %d", pkt_count);
 #endif
     if (alarm_flag){
-	//printk(KERN_INFO "ratelimit: Alarm activated. Dropping packets on port %lu for %lu seconds.", portno, wait_time);
+	printk(KERN_INFO "ratelimit: Alarm activated. Dropping packets on port %lu for %lu seconds.", portno, wait_time);
 	tmr.expires = jiffies + HZ * 5;
 	alarm_flag = 0;
     } else {
 #ifdef VERBOSE
 	printk(KERN_INFO "ratelimit: standard timer.");
 #endif
-	active = 1;
+	if (!active){
+	    printk(KERN_INFO "ratelimit: returning to normal behaviour.");
+	    active = 1;
+	}
+	spin_lock(&spin);
+	pkt_count = 0;
+	spin_unlock(&spin);
 	tmr.expires = jiffies + HZ;
     }
-    // SYNC
-    pkt_count = 0;// Packet count is reset each timer tick. Don't forget to synchronise this
+
+    spin_lock(&spin);
+    pkt_count = 0;
+    spin_unlock(&spin);
+    
     add_timer(&tmr); /* setup the timer again */
 }
 
@@ -225,7 +259,9 @@ int kernelRead (struct file *file, const char *buffer, unsigned long count, void
     }
       
     kernelBuffer[BUFFERLENGTH -1] = '\0'; /* safety measure: ensure string termination */
+#ifdef VERBOSE
     printk(KERN_INFO "ratelimit: Having read %s\n", kernelBuffer);
+#endif
     
     /* 
      * simple_strtoul does no explicit checking. If there are any characters before a number
@@ -335,5 +371,5 @@ void cleanup_module(void)
     else {
 	printk (KERN_INFO "ratelimit: timer successfully removed.\n");
     }
-    printk(KERN_INFO "ratelimit: firewall extensions module unloaded\n");
+    printk(KERN_INFO "ratelimit: module unloaded\n");
 }
