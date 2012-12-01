@@ -21,6 +21,7 @@
 #define SET_LIMIT 'L' // max conns/sec
 #define SET_WAIT 'W' // wait time after limit exceeded
 #define BUFFERLENGTH 256
+#define TIMER_TICK 1
 
 //#define VERBOSE
 
@@ -29,7 +30,7 @@ MODULE_DESCRIPTION ("Extensions to the firewall") ;
 MODULE_LICENSE("GPL");
 
 int init_fw_hook(void);
-int tmr_init(void);
+int tmr_init(int expiry_time);
 void timer_exp (unsigned long arg);
 
 struct nf_hook_ops *reg;
@@ -37,12 +38,12 @@ struct timer_list tmr;
 struct proc_dir_entry *procKernelRead;
 int pkt_count;
 int timer_count;
-int alarm_flag;
+int alarm_set;
 int active = 1;
 
 unsigned long portno;
 unsigned long limit = 0; // accept all packets.
-unsigned long wait_time;
+unsigned long wait_time = 2; // default wait time
 
 spinlock_t spin = SPIN_LOCK_UNLOCKED;
 
@@ -62,8 +63,10 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
     struct iphdr *ip;
     unsigned int ret = NF_ACCEPT;
     // We set this flag if we need to increment the packet count. We increment at the end of the function
-    int increment_flag = 0; 
-        
+    int increment_flag = 0;
+    // set this if the limit has been exceeded
+    int alarm_flag = 0;
+            
     if (portno == 0) // If port is unset, allow everything
 	return ret;
     
@@ -91,50 +94,41 @@ unsigned int FirewallExtensionHook (unsigned int hooknum,
 #ifdef VERBOSE
 	printk(KERN_INFO "ratelimit: destination port = %d\n", htons(tcp->dest)); 
 #endif
-	/* if (active){ // If we are accepting packets on the monitored port */
-	/*     // If the destination of the packet is the one we are monitoring */
-	/*     if (htons(tcp->dest) == portno) { */
-	/* 	printk(KERN_INFO "ratelimit: packet destined for monitored port received."); */
-	/* 	//increment_flag = 1; */
-	/* 	pkt_count++; */
-	/* 	// If we're over the limit, stop accepting packets, set the alarm flag and */
-	/* 	// drop the packet. Otherwise, accept the packet. */
-	/* 	if (limit >= 1 && pkt_count > limit){ */
-	/* 	    printk(KERN_INFO "ratelimit: limit exceeded. Dropping all packets to port %lu for %lu seconds.", portno, wait_time); */
-	/* 	    active = 0; */
-	/* 	    alarm_flag = 1; */
-	/* 	    ret = NF_DROP; */
-	/* 	} */
-	/*     } */
-	/* } else { // We are not accepting packets on the monitored port */
-	/*     // Only drop the packet if it is being sent to the port we are monitoring. */
-	/*     if (htons(tcp->dest) == portno) { */
-	/* 	//increment_flag = 1; */
-	/* 	pkt_count++; */
-	/* 	ret = NF_DROP; */
-	/*     } */
-	/* } */
-	if (htons(tcp->dest) == portno){
+	if (htons(tcp->dest) == portno){ // we set a flag if a packet is received on the monitored port
 	    increment_flag = 1;
 	}
     }
-    
     // If we received a packet on the monitored port and a limit has been set
     if (increment_flag == 1 && limit >= 1){
-	// Is this section too long? Everything in here needs to be done without
-	// interruption other than ret being set.
     	spin_lock(&spin);
 	pkt_count++;
 	if (active && pkt_count > limit){
-	    printk(KERN_INFO "ratelimit: limit exceeded - alarm flag set");
 	    active = 0;
 	    alarm_flag = 1;
-	    ret = NF_DROP;
-	} else if (!active){
-	    ret = NF_DROP;
 	}
+	if (!active)
+	    ret = NF_DROP;
     	spin_unlock(&spin);
     }
+#ifdef VERBOSE
+    printk(KERN_INFO "ratelimit: packets: %d", pkt_count);
+#endif
+    if (alarm_flag == 1){
+	printk(KERN_INFO "ratelimit: limit exceeded - alarm flag set");
+	// Delete the old timer and set up a new timer to expire when the
+	// specified wait time has elapsed
+	tmr_init(wait_time);
+	spin_lock(&spin);
+	alarm_set = 1; // set a flag to notify the callback function
+	spin_unlock(&spin);
+    }
+
+#ifdef VERBOSE
+    if(ret == NF_DROP)
+	printk(KERN_INFO "ratelimit: dropping packet");
+    else if (ret == NF_ACCEPT)
+	printk(KERN_INFO "ratelimit: accepting packet");
+#endif
 
     return ret;
 }
@@ -149,10 +143,14 @@ EXPORT_SYMBOL (FirewallExtensionHook);
 /*
  * Initialises the timer we will use to reset the connection count.
  */
-int tmr_init(void)
+int tmr_init(int expiry_time)
 {
     unsigned long currentTime = jiffies; 
-    unsigned long expiryTime = currentTime + HZ; /* HZ gives number of ticks per second */
+    unsigned long expiryTime = currentTime + expiry_time * HZ; /* HZ gives number of ticks per second */
+    
+    del_timer(&tmr); // delete the existing timer
+
+    printk(KERN_INFO "Setting timer to expire in %d seconds\n", expiry_time);
     
     init_timer(&tmr);
     tmr.function = timer_exp;
@@ -193,32 +191,23 @@ int init_fw_hook(void)
  */
 void timer_exp (unsigned long arg) {
     timer_count++;
-#ifdef VERBOSE
     printk(KERN_INFO "ratelimit: packet count %d", pkt_count);
-#endif
-    if (alarm_flag){
-	printk(KERN_INFO "ratelimit: Alarm activated. Dropping packets on port %lu for %lu seconds.", portno, wait_time);
-	tmr.expires = jiffies + HZ * 5;
-	alarm_flag = 0;
-    } else {
-#ifdef VERBOSE
-	printk(KERN_INFO "ratelimit: standard timer.");
-#endif
-	if (!active){
-	    printk(KERN_INFO "ratelimit: returning to normal behaviour.");
-	    active = 1;
-	}
+    if (alarm_set){
+	// reset the alarm activation flag, and accept packets again
 	spin_lock(&spin);
-	pkt_count = 0;
+	alarm_set = 0;
+	active = 1;
 	spin_unlock(&spin);
-	tmr.expires = jiffies + HZ;
+	printk(KERN_INFO "ratelimit: Packets were dropped on port %lu for %lu seconds.", portno, wait_time);
     }
+
+    tmr.expires = jiffies + TIMER_TICK * HZ; // We always set the timer to the default tick time
 
     spin_lock(&spin);
     pkt_count = 0;
     spin_unlock(&spin);
     
-    add_timer(&tmr); /* setup the timer again */
+    add_timer(&tmr);
 }
 
 /* 
@@ -227,13 +216,14 @@ void timer_exp (unsigned long arg) {
  * write a user space program to do it, or you can use something like "echo 'P 2000' > /proc/ratelimit"
  * which can do pretty much the same stuff you can do with a user space program. It's probably easier
  * to use the bash method if you're just passing in some short parameters.
+ * 
+ * The setparams.sh script also does this.
  */
 int kernelRead (struct file *file, const char *buffer, unsigned long count, void *data) { 
 
     char *kernelBuffer; /* the kernel buffer */
     char **endptr = NULL;
     unsigned long tmp;
-    //int ret = 0;
          
     /*
      * Second argument controls the behaviour of the memory allocation. GFP_KERNEL is the
@@ -326,7 +316,7 @@ int init_module(void)
 	printk(KERN_INFO "ratelimit: firewall extension registered.\n");
     }
     
-    if ((ret = tmr_init())){
+    if ((ret = tmr_init(TIMER_TICK))){
 	printk(KERN_INFO "ratelimit: could not initialise timer.\n");
 	errno++;
     } else {
